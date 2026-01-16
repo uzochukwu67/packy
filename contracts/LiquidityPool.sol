@@ -2,241 +2,337 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
- * @title LiquidityPool
- * @notice Manages LP deposits, withdrawals, and liquidity locking for betting payouts
- * @dev LPs provide liquidity to back bonus payouts for winning bets
+ * @title LiquidityPoolV2
+ * @notice Unified AMM-style liquidity pool for betting protocol
+ * @dev All risk and rewards flow through this pool:
+ *      - LPs deposit LEAGUE tokens and receive proportional shares
+ *      - Pool covers all payouts (base + parlay bonuses)
+ *      - Pool funds round seeding (3k per round)
+ *      - LPs earn from losing bets, lose from winning bets
+ *      - Direct deduction model (losses immediately reduce pool value)
  */
-contract LiquidityPool is ERC20, Ownable, ReentrancyGuard {
+contract LiquidityPoolV2 is ReentrancyGuard, Ownable {
+    // ============ State Variables ============
+
     IERC20 public immutable leagueToken;
 
-    // Pool parameters
-    uint256 public constant MAX_UTILIZATION = 70; // 70% max utilization
-    uint256 public constant MAX_BET_PERCENTAGE = 2; // 2% max bet size
-    uint256 public constant MIN_POOL_RESERVE = 1000e18; // 1k tokens minimum
+    // LP share accounting (AMM-style)
+    uint256 public totalLiquidity;           // Total LEAGUE in pool
+    uint256 public totalShares;              // Total LP shares issued
+    mapping(address => uint256) public lpShares; // LP shares per address
 
-    // Pool state
-    uint256 public totalLiquidity;
-    uint256 public lockedLiquidity;
+    // Locked liquidity (for pending payouts and seeding)
+    uint256 public lockedLiquidity;          // Temporarily locked for settlements
 
-    // Withdrawal cooldown tracking
-    mapping(address => uint256) public lastDepositTime;
-    uint256 public constant WITHDRAWAL_COOLDOWN = 15 minutes; // Must wait for round duration
-
-    // Authorized contracts
+    // Authorized contracts (only betting pool can deduct/add)
     mapping(address => bool) public authorizedCallers;
 
-    // Events
+    // Constants
+    uint256 public constant MINIMUM_LIQUIDITY = 1000; // Prevent division by zero
+    uint256 public constant WITHDRAWAL_FEE = 50; // 0.5% exit fee (50 basis points)
+
+    // ============ Events ============
+
     event LiquidityAdded(address indexed provider, uint256 amount, uint256 shares);
-    event LiquidityRemoved(address indexed provider, uint256 amount, uint256 shares);
+    event LiquidityRemoved(address indexed provider, uint256 shares, uint256 amount, uint256 fee);
+    event PayoutProcessed(address indexed winner, uint256 amount);
+    event LosingBetCollected(uint256 amount);
+    event SeedingFunded(uint256 roundId, uint256 amount);
     event LiquidityLocked(uint256 amount, uint256 totalLocked);
     event LiquidityUnlocked(uint256 amount, uint256 totalLocked);
-    event PayoutProcessed(address indexed winner, uint256 amount);
-    event AuthorizedCallerUpdated(address indexed caller, bool authorized);
+    event EmergencyWithdraw(address indexed owner, uint256 amount);
 
-    constructor(
-        address _leagueToken,
-        address _initialOwner
-    ) ERC20("IVirtualz LP Token", "vLP") Ownable(_initialOwner) {
+    // ============ Errors ============
+
+    error InsufficientLiquidity();
+    error InsufficientShares();
+    error Unauthorized();
+    error ZeroAmount();
+    error TransferFailed();
+    error MinimumLiquidityRequired();
+
+    // ============ Constructor ============
+
+    constructor(address _leagueToken, address _initialOwner) Ownable(_initialOwner) {
+        require(_leagueToken != address(0), "Invalid token");
         leagueToken = IERC20(_leagueToken);
     }
 
+    // ============ Modifiers ============
+
     modifier onlyAuthorized() {
-        require(authorizedCallers[msg.sender], "Not authorized");
+        if (!authorizedCallers[msg.sender]) revert Unauthorized();
         _;
     }
 
-    /**
-     * @notice Add liquidity to the pool and receive LP tokens
-     * @param amount Amount of LEAGUE tokens to deposit
-     */
-    function deposit(uint256 amount) external nonReentrant {
-        require(amount > 0, "Amount must be > 0");
+    // ============ LP Functions ============
 
-        uint256 shares;
-        if (totalSupply() == 0 || totalLiquidity == 0) {
-            // Initial deposit: 1:1 ratio with minimum to prevent share inflation
-            require(amount >= 1000e18, "Initial deposit must be >= 1000 LEAGUE");
-            shares = amount;
-        } else {
-            // Calculate shares based on current pool ratio
-            // Account for locked liquidity in calculation
-            uint256 effectiveLiquidity = totalLiquidity;
-            shares = (amount * totalSupply()) / effectiveLiquidity;
+    /**
+     * @notice Add liquidity to the pool and receive LP shares
+     * @param amount Amount of LEAGUE tokens to deposit
+     * @return shares Number of LP shares minted
+     */
+    function addLiquidity(uint256 amount) external nonReentrant returns (uint256 shares) {
+        if (amount == 0) revert ZeroAmount();
+
+        // Transfer tokens from LP
+        if (!leagueToken.transferFrom(msg.sender, address(this), amount)) {
+            revert TransferFailed();
         }
 
-        require(shares > 0, "Shares must be > 0");
+        // Calculate shares (AMM formula)
+        if (totalShares == 0) {
+            // First LP: shares = amount (minus minimum liquidity lock)
+            shares = amount - MINIMUM_LIQUIDITY;
+            totalShares = amount;
+            lpShares[address(0)] = MINIMUM_LIQUIDITY; // Lock minimum liquidity forever
+        } else {
+            // Subsequent LPs: shares proportional to pool
+            // shares = (amount * totalShares) / totalLiquidity
+            shares = (amount * totalShares) / totalLiquidity;
+        }
 
-        // Transfer tokens from user
-        require(
-            leagueToken.transferFrom(msg.sender, address(this), amount),
-            "Transfer failed"
-        );
+        if (shares == 0) revert MinimumLiquidityRequired();
 
         // Update state
+        lpShares[msg.sender] += shares;
+        totalShares += shares;
         totalLiquidity += amount;
-        lastDepositTime[msg.sender] = block.timestamp;
-
-        // Mint LP tokens
-        _mint(msg.sender, shares);
 
         emit LiquidityAdded(msg.sender, amount, shares);
+
+        return shares;
     }
 
     /**
-     * @notice Withdraw liquidity by burning LP tokens
-     * @param shares Amount of LP tokens to burn
+     * @notice Remove liquidity from the pool by burning LP shares
+     * @param shares Number of LP shares to burn
+     * @return amount Amount of LEAGUE tokens received (after withdrawal fee)
      */
-    function withdraw(uint256 shares) external nonReentrant {
-        require(shares > 0, "Shares must be > 0");
-        require(balanceOf(msg.sender) >= shares, "Insufficient shares");
+    function removeLiquidity(uint256 shares) external nonReentrant returns (uint256 amount) {
+        if (shares == 0) revert ZeroAmount();
+        if (lpShares[msg.sender] < shares) revert InsufficientShares();
 
-        // Enforce withdrawal cooldown (15 minutes = 1 round duration)
-        // This prevents LPs from withdrawing immediately before payouts
-        require(
-            block.timestamp >= lastDepositTime[msg.sender] + WITHDRAWAL_COOLDOWN,
-            "Withdrawal cooldown active - wait for round to complete"
-        );
+        // Calculate amount to return
+        // amount = (shares * totalLiquidity) / totalShares
+        uint256 totalAmount = (shares * totalLiquidity) / totalShares;
 
-        // Calculate underlying token amount
-        uint256 amount = (shares * totalLiquidity) / totalSupply();
+        // Apply withdrawal fee (0.5%)
+        uint256 fee = (totalAmount * WITHDRAWAL_FEE) / 10000;
+        amount = totalAmount - fee;
 
-        // Check if enough liquidity is available (not locked)
+        // Check sufficient unlocked liquidity
         uint256 availableLiquidity = totalLiquidity - lockedLiquidity;
-        require(amount <= availableLiquidity, "Insufficient available liquidity");
-
-        // Burn LP tokens
-        _burn(msg.sender, shares);
+        if (amount > availableLiquidity) revert InsufficientLiquidity();
 
         // Update state
+        lpShares[msg.sender] -= shares;
+        totalShares -= shares;
+        totalLiquidity -= amount; // Fee stays in pool (benefits remaining LPs)
+
+        // Transfer tokens to LP
+        if (!leagueToken.transfer(msg.sender, amount)) {
+            revert TransferFailed();
+        }
+
+        emit LiquidityRemoved(msg.sender, shares, amount, fee);
+
+        return amount;
+    }
+
+    // ============ Betting Pool Functions (Authorized Only) ============
+
+    /**
+     * @notice Collect losing bet into pool (increases LP value)
+     * @param amount Amount of LEAGUE from losing bet
+     * @dev Called by BettingPool when user loses
+     */
+    function collectLosingBet(uint256 amount) external onlyAuthorized {
+        // Transfer tokens from caller (BettingPool) to this contract
+        if (!leagueToken.transferFrom(msg.sender, address(this), amount)) {
+            revert TransferFailed();
+        }
+
+        totalLiquidity += amount;
+        emit LosingBetCollected(amount);
+    }
+
+    /**
+     * @notice Pay out winning bet from pool (decreases LP value)
+     * @param winner Address of winner
+     * @param amount Total payout (base + parlay bonus)
+     * @dev Called by BettingPool when user wins
+     */
+    function payWinner(address winner, uint256 amount) external onlyAuthorized nonReentrant {
+        if (amount > totalLiquidity - lockedLiquidity) revert InsufficientLiquidity();
+
         totalLiquidity -= amount;
 
-        // Transfer tokens to user
-        require(leagueToken.transfer(msg.sender, amount), "Transfer failed");
+        if (!leagueToken.transfer(winner, amount)) {
+            revert TransferFailed();
+        }
 
-        emit LiquidityRemoved(msg.sender, amount, shares);
+        emit PayoutProcessed(winner, amount);
     }
 
     /**
-     * @notice Get available (unlocked) liquidity
+     * @notice Fund round seeding from LP pool
+     * @param roundId Round being seeded
+     * @param amount Amount to seed (typically 3,000 LEAGUE)
+     * @return success Whether seeding was successful
+     * @dev Called by BettingPool before round starts
      */
-    function getAvailableLiquidity() public view returns (uint256) {
-        return totalLiquidity - lockedLiquidity;
+    function fundSeeding(uint256 roundId, uint256 amount) external onlyAuthorized returns (bool) {
+        if (amount > totalLiquidity - lockedLiquidity) {
+            return false; // Not enough liquidity
+        }
+
+        totalLiquidity -= amount;
+
+        // Transfer to betting pool for seeding
+        if (!leagueToken.transfer(msg.sender, amount)) {
+            revert TransferFailed();
+        }
+
+        emit SeedingFunded(roundId, amount);
+        return true;
     }
 
     /**
-     * @notice Get total liquidity in pool
-     */
-    function getTotalLiquidity() public view returns (uint256) {
-        return totalLiquidity;
-    }
-
-    /**
-     * @notice Get current pool utilization percentage
-     */
-    function getUtilization() public view returns (uint256) {
-        if (totalLiquidity == 0) return 0;
-        return (lockedLiquidity * 100) / totalLiquidity;
-    }
-
-    /**
-     * @notice Get dynamic pool bonus multiplier based on utilization
-     * @return multiplier in basis points (200 = 2x, 150 = 1.5x, etc.)
-     */
-    function getPoolMultiplier() public view returns (uint256) {
-        uint256 utilization = getUtilization();
-
-        if (utilization < 30) return 200; // 2x pool bonus
-        if (utilization < 50) return 150; // 1.5x pool bonus
-        if (utilization < 70) return 100; // 1x pool bonus
-        if (utilization < 85) return 50;  // 0.5x pool bonus
-        return 25; // 0.25x pool bonus (nearly depleted)
-    }
-
-    /**
-     * @notice Check if liquidity can be locked for a bet
+     * @notice Lock liquidity for pending settlements
      * @param amount Amount to lock
-     */
-    function canLockLiquidity(uint256 amount) public view returns (bool) {
-        if (totalLiquidity == 0) return false;
-
-        uint256 available = getAvailableLiquidity();
-        uint256 newUtilization = ((lockedLiquidity + amount) * 100) / totalLiquidity;
-        uint256 maxBetSize = (totalLiquidity * MAX_BET_PERCENTAGE) / 100;
-
-        return amount <= available
-            && newUtilization <= MAX_UTILIZATION
-            && amount <= maxBetSize
-            && totalLiquidity >= MIN_POOL_RESERVE;
-    }
-
-    /**
-     * @notice Lock liquidity for an active bet
-     * @param amount Amount to lock
+     * @dev Called by BettingPool to reserve liquidity for known payouts
      */
     function lockLiquidity(uint256 amount) external onlyAuthorized {
-        require(canLockLiquidity(amount), "Cannot lock liquidity");
+        if (amount > totalLiquidity - lockedLiquidity) revert InsufficientLiquidity();
+
         lockedLiquidity += amount;
         emit LiquidityLocked(amount, lockedLiquidity);
     }
 
     /**
-     * @notice Unlock liquidity when bet is settled (lost)
+     * @notice Unlock liquidity after settlement
      * @param amount Amount to unlock
+     * @dev Called by BettingPool after payouts are processed
      */
     function unlockLiquidity(uint256 amount) external onlyAuthorized {
-        require(lockedLiquidity >= amount, "Insufficient locked liquidity");
-        lockedLiquidity -= amount;
+        if (amount > lockedLiquidity) {
+            lockedLiquidity = 0; // Safety: can't unlock more than locked
+        } else {
+            lockedLiquidity -= amount;
+        }
         emit LiquidityUnlocked(amount, lockedLiquidity);
     }
 
+    // ============ View Functions ============
+
     /**
-     * @notice Unlock and pay out to winner (bet won)
-     * @param winner Address to receive payout
-     * @param amount Amount to pay
+     * @notice Get LP's share of the pool
+     * @param lp Address of LP
+     * @return shareAmount Amount of LEAGUE the LP can withdraw
+     * @return sharePercentage Percentage of pool owned (in basis points)
      */
-    function unlockAndPay(address winner, uint256 amount) external onlyAuthorized {
-        require(lockedLiquidity >= amount, "Insufficient locked liquidity");
-        require(totalLiquidity >= amount, "Insufficient total liquidity");
+    function getLPValue(address lp) external view returns (uint256 shareAmount, uint256 sharePercentage) {
+        if (totalShares == 0) return (0, 0);
 
-        lockedLiquidity -= amount;
-        totalLiquidity -= amount;
+        uint256 shares = lpShares[lp];
+        shareAmount = (shares * totalLiquidity) / totalShares;
+        sharePercentage = (shares * 10000) / totalShares; // Basis points
 
-        require(leagueToken.transfer(winner, amount), "Transfer failed");
-
-        emit PayoutProcessed(winner, amount);
-        emit LiquidityUnlocked(amount, lockedLiquidity);
+        return (shareAmount, sharePercentage);
     }
 
     /**
-     * @notice Add liquidity from losing bets (protocol contribution)
-     * @param amount Amount to add
+     * @notice Get available (unlocked) liquidity
+     * @return available Amount of LEAGUE available for withdrawals/payouts
      */
-    function addLiquidity(uint256 amount) external onlyAuthorized {
-        totalLiquidity += amount;
+    function getAvailableLiquidity() external view returns (uint256) {
+        return totalLiquidity - lockedLiquidity;
     }
 
     /**
-     * @notice Set authorized caller (BettingPool contract)
-     * @param caller Address to authorize
-     * @param authorized Authorization status
+     * @notice Calculate shares that would be minted for a given deposit
+     * @param amount Amount of LEAGUE to deposit
+     * @return shares Number of shares that would be minted
+     */
+    function previewDeposit(uint256 amount) external view returns (uint256 shares) {
+        if (totalShares == 0) {
+            return amount - MINIMUM_LIQUIDITY;
+        }
+        return (amount * totalShares) / totalLiquidity;
+    }
+
+    /**
+     * @notice Calculate LEAGUE amount for burning shares
+     * @param shares Number of shares to burn
+     * @return amount Amount of LEAGUE that would be received (after fee)
+     */
+    function previewWithdrawal(uint256 shares) external view returns (uint256 amount) {
+        if (totalShares == 0) return 0;
+
+        uint256 totalAmount = (shares * totalLiquidity) / totalShares;
+        uint256 fee = (totalAmount * WITHDRAWAL_FEE) / 10000;
+        return totalAmount - fee;
+    }
+
+    /**
+     * @notice Check if pool has enough liquidity for a payout
+     * @param amount Amount needed
+     * @return sufficient Whether pool can cover the amount
+     */
+    function canCoverPayout(uint256 amount) external view returns (bool) {
+        return amount <= (totalLiquidity - lockedLiquidity);
+    }
+
+    /**
+     * @notice Get pool utilization rate
+     * @return utilizationBPS Percentage of liquidity locked (in basis points)
+     */
+    function getUtilizationRate() external view returns (uint256 utilizationBPS) {
+        if (totalLiquidity == 0) return 0;
+        return (lockedLiquidity * 10000) / totalLiquidity;
+    }
+
+    // ============ Admin Functions ============
+
+    /**
+     * @notice Authorize a contract to interact with the pool
+     * @param caller Address to authorize (typically BettingPool)
+     * @param authorized Whether to authorize or revoke
      */
     function setAuthorizedCaller(address caller, bool authorized) external onlyOwner {
         authorizedCallers[caller] = authorized;
-        emit AuthorizedCallerUpdated(caller, authorized);
     }
 
     /**
-     * @notice Get LP position value for an address
-     * @param account LP address
+     * @notice Emergency withdraw (owner only, use with extreme caution)
+     * @param amount Amount to withdraw
+     * @dev Should only be used in catastrophic scenarios
      */
-    function getPositionValue(address account) external view returns (uint256) {
-        uint256 shares = balanceOf(account);
-        if (shares == 0 || totalSupply() == 0) return 0;
-        return (shares * totalLiquidity) / totalSupply();
+    function emergencyWithdraw(uint256 amount) external onlyOwner {
+        if (amount > leagueToken.balanceOf(address(this))) revert InsufficientLiquidity();
+
+        if (!leagueToken.transfer(owner(), amount)) {
+            revert TransferFailed();
+        }
+
+        emit EmergencyWithdraw(owner(), amount);
+    }
+
+    // ============ Recovery Functions ============
+
+    /**
+     * @notice Recover ERC20 tokens sent by mistake
+     * @param token Token to recover
+     * @param amount Amount to recover
+     * @dev Cannot recover LEAGUE tokens (would break accounting)
+     */
+    function recoverERC20(address token, uint256 amount) external onlyOwner {
+        require(token != address(leagueToken), "Cannot recover LEAGUE");
+        IERC20(token).transfer(owner(), amount);
     }
 }

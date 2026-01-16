@@ -5,50 +5,58 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./interfaces/IGameEngine.sol";
-import "./interfaces/ILiquidityPool.sol";
+import "./interfaces/ILiquidityPoolV2.sol";
 
 /**
- * @title BettingPoolV2.1
- * @notice Pool-based betting system with parlay multiplier bonuses and protocol seeding
- * @dev Implements Logic.md recommendations for production-grade betting protocol
+ * @title BettingPoolV2.1 - Unified LP Pool Model
+ * @notice Pool-based betting system where ALL risk flows through LP pool
+ * @dev NEW ARCHITECTURE:
+ *      - Protocol earns 5% fee on all bets
+ *      - LP pool covers ALL payouts (base + parlay bonuses)
+ *      - LP pool funds round seeding (3k per round)
+ *      - Reduced parlay bonuses (1.25x max) for LP safety
+ *      - AMM-style LP shares (deposit/withdraw anytime)
  *
- * KEY IMPROVEMENTS OVER V2:
- * - ✅ Parlay multiplier bonus (1.2x - 2.5x for winning multibets)
- * - ✅ Protocol seeding for differentiated initial odds
- * - ✅ Deterministic remainder handling
- * - ✅ Locked parlay reserve accounting
- *
- * ARCHITECTURE (from Logic.md):
- * - Two-layer payout: (Base Pool Payout) × (Parlay Multiplier)
- * - Bonus comes from protocol reserve (not from LPs)
- * - Bonuses reserved upfront to prevent insolvency
+ * KEY FEATURES:
+ * - ✅ Unified LP pool (no separate protocol reserve)
+ * - ✅ Direct deduction model (losses immediately reduce LP value)
+ * - ✅ 5% protocol fee on every bet
+ * - ✅ Reduced parlay multipliers (1.0x - 1.25x)
+ * - ✅ Max bet, max payout, and per-round caps
  */
 contract BettingPoolV2_1 is Ownable, ReentrancyGuard {
     // ============ State Variables ============
 
     IERC20 public immutable leagueToken;
     IGameEngine public immutable gameEngine;
-    ILiquidityPool public immutable liquidityPool;
+    ILiquidityPoolV2 public immutable liquidityPoolV2;
 
-    address public protocolTreasury;
+    address public immutable protocolTreasury;
     address public rewardsDistributor;
 
-    // Protocol parameters (UPDATED per Logic2.md simulation)
-    uint256 public constant PROTOCOL_CUT = 4500; // 45% of losing bets (was 30%)
-    uint256 public constant WINNER_SHARE = 5500; // 55% distributed to winners
-    uint256 public constant SEASON_POOL_SHARE = 200; // 2% of losing bets
+    // NEW: Protocol fee model (5% on all bets)
+    uint256 public constant PROTOCOL_FEE = 500; // 5% fee in basis points
+    uint256 public constant WINNER_SHARE = 2500; // 25% distributed to winners (REDUCED for LP safety)
+    uint256 public constant SEASON_POOL_SHARE = 200; // 2% for season rewards
 
     // Multibet stake bonus rates (basis points) - added to pool
     uint256 public constant BONUS_2_MATCH = 500;   // 5%
     uint256 public constant BONUS_3_MATCH = 1000;  // 10%
     uint256 public constant BONUS_4_PLUS = 2000;   // 20%
 
-    // Parlay payout multipliers (1e18 scale) - NEW!
-    uint256 public constant PARLAY_MULTIPLIER_1_LEG = 1e18;      // 1.0x (no bonus)
-    uint256 public constant PARLAY_MULTIPLIER_2_LEGS = 12e17;    // 1.2x
-    uint256 public constant PARLAY_MULTIPLIER_3_LEGS = 15e17;    // 1.5x
-    uint256 public constant PARLAY_MULTIPLIER_4_LEGS = 2e18;     // 2.0x
-    uint256 public constant PARLAY_MULTIPLIER_5_PLUS = 25e17;    // 2.5x (capped)
+    // Parlay payout multipliers (1e18 scale) - UPDATED to match-based linear scaling
+    // REDUCED Linear progression: 1.05x (2 matches) to 1.25x (10 matches) for LP safety
+    // Reduces LP risk by ~50% while keeping parlays attractive
+    uint256 public constant PARLAY_MULTIPLIER_1_MATCH = 1e18;      // 1.0x (no bonus)
+    uint256 public constant PARLAY_MULTIPLIER_2_MATCHES = 105e16;  // 1.05x (was 1.15x)
+    uint256 public constant PARLAY_MULTIPLIER_3_MATCHES = 11e17;   // 1.10x (was 1.194x)
+    uint256 public constant PARLAY_MULTIPLIER_4_MATCHES = 113e16;  // 1.13x (was 1.238x)
+    uint256 public constant PARLAY_MULTIPLIER_5_MATCHES = 116e16;  // 1.16x (was 1.281x)
+    uint256 public constant PARLAY_MULTIPLIER_6_MATCHES = 119e16;  // 1.19x (was 1.325x)
+    uint256 public constant PARLAY_MULTIPLIER_7_MATCHES = 121e16;  // 1.21x (was 1.369x)
+    uint256 public constant PARLAY_MULTIPLIER_8_MATCHES = 123e16;  // 1.23x (was 1.413x)
+    uint256 public constant PARLAY_MULTIPLIER_9_MATCHES = 124e16;  // 1.24x (was 1.456x)
+    uint256 public constant PARLAY_MULTIPLIER_10_MATCHES = 125e16; // 1.25x (was 1.5x)
 
     // Protocol seeding per match (REDUCED 75% per Logic2.md simulation)
     uint256 public constant SEED_HOME_POOL = 120 ether;   // Favorite (was 500)
@@ -91,8 +99,14 @@ contract BettingPoolV2_1 is Ownable, ReentrancyGuard {
     uint256 public constant TIER_3_DECAY = 7600;  // 76% (24% decay)
     uint256 public constant TIER_4_DECAY = 6400;  // 64% (36% decay)
 
-    uint256 public protocolReserve;
-    uint256 public lockedParlayReserve;  // NEW: Reserved for pending parlay bonuses
+    // ============ RISK MANAGEMENT CAPS (CRITICAL) ============
+    // These caps protect protocol reserve from catastrophic depletion
+    uint256 public constant MAX_BET_AMOUNT = 10000 ether; // 10,000 LEAGUE max bet
+    uint256 public constant MAX_PAYOUT_PER_BET = 100000 ether; // 100,000 LEAGUE max payout
+    uint256 public constant MAX_ROUND_PAYOUTS = 500000 ether; // 500,000 LEAGUE per round
+
+    // REMOVED: protocolReserve (now handled by LP pool)
+    // REMOVED: lockedParlayReserve (LP pool covers all payouts)
     uint256 public seasonRewardPool;
     uint256 public nextBetId;
 
@@ -115,8 +129,10 @@ contract BettingPoolV2_1 is Ownable, ReentrancyGuard {
         uint256 totalLosingPool;        // Sum of all losing outcome pools
         uint256 totalReservedForWinners; // Total owed to winners (calculated from pools)
         uint256 totalClaimed;            // Total LEAGUE claimed so far
+        uint256 totalPaidOut;            // Total LEAGUE paid out (including parlay bonuses) - NEW
 
         // Revenue distribution
+        uint256 protocolFeeCollected;    // Protocol fee collected (5% of bets) - NEW
         uint256 protocolRevenueShare;   // Protocol's share of net revenue
         uint256 lpRevenueShare;          // LP's share of net revenue
         uint256 seasonRevenueShare;      // Season pool share
@@ -146,6 +162,7 @@ contract BettingPoolV2_1 is Ownable, ReentrancyGuard {
         uint256 roundId;
         uint256 amount;             // User's stake (without bonus)
         uint256 bonus;              // Protocol stake bonus added to pools
+        uint256 lockedMultiplier;   // Parlay multiplier locked at bet placement (CRITICAL FIX)
         Prediction[] predictions;   // Match predictions
         bool settled;               // Has round been settled?
         bool claimed;               // Has user claimed winnings?
@@ -226,7 +243,7 @@ contract BettingPoolV2_1 is Ownable, ReentrancyGuard {
 
         leagueToken = IERC20(_leagueToken);
         gameEngine = IGameEngine(_gameEngine);
-        liquidityPool = ILiquidityPool(_liquidityPool);
+        liquidityPoolV2 = ILiquidityPoolV2(_liquidityPool);
         protocolTreasury = _protocolTreasury;
         rewardsDistributor = _rewardsDistributor;
     }
@@ -459,9 +476,10 @@ contract BettingPoolV2_1 is Ownable, ReentrancyGuard {
             accounting.totalBetVolume += pool.totalPool;
         }
 
-        // Deduct from protocol reserve
-        require(protocolReserve >= totalSeedAmount, "Insufficient reserve");
-        protocolReserve -= totalSeedAmount;
+        // Request seeding from LP pool
+        bool success = liquidityPoolV2.fundSeeding(roundId, totalSeedAmount);
+        require(success, "LP pool cannot fund seeding - insufficient liquidity");
+
         accounting.protocolSeedAmount = totalSeedAmount;
         accounting.seeded = true;
 
@@ -482,6 +500,7 @@ contract BettingPoolV2_1 is Ownable, ReentrancyGuard {
         uint256 amount
     ) external nonReentrant returns (uint256 betId) {
         require(amount > 0, "Amount must be > 0");
+        require(amount <= MAX_BET_AMOUNT, "Bet exceeds maximum"); // CRITICAL: Cap max bet
         require(matchIndices.length == outcomes.length, "Array length mismatch");
         require(matchIndices.length > 0 && matchIndices.length <= 10, "Invalid bet count");
 
@@ -497,18 +516,19 @@ contract BettingPoolV2_1 is Ownable, ReentrancyGuard {
 
         RoundAccounting storage accounting = roundAccounting[currentRoundId];
 
-        // Calculate multibet stake bonus (added to pools)
-        uint256 stakeBonus = _calculateMultibetBonus(amount, matchIndices.length);
-        require(protocolReserve >= stakeBonus, "Insufficient reserve for stake bonus");
-        protocolReserve -= stakeBonus;
+        // Deduct 5% protocol fee
+        uint256 protocolFee = (amount * PROTOCOL_FEE) / 10000;
+        uint256 amountAfterFee = amount - protocolFee;
 
-        uint256 totalWithBonus = amount + stakeBonus;
+        // Transfer fee to treasury
+        require(leagueToken.transfer(protocolTreasury, protocolFee), "Fee transfer failed");
 
-        accounting.totalBetVolume += totalWithBonus;
+        accounting.protocolFeeCollected += protocolFee;
+        accounting.totalBetVolume += amountAfterFee;
 
         // Split bet evenly across matches with pseudo-random remainder handling (ISSUE #6 fix)
-        uint256 perMatch = totalWithBonus / matchIndices.length;
-        uint256 remainder = totalWithBonus % matchIndices.length;
+        uint256 perMatch = amountAfterFee / matchIndices.length;
+        uint256 remainder = amountAfterFee % matchIndices.length;
 
         // Assign betId FIRST (BUG #1 fix)
         betId = nextBetId++;
@@ -524,9 +544,12 @@ contract BettingPoolV2_1 is Ownable, ReentrancyGuard {
             matchIndices.length
         );
 
-        // Reserve bonus and store mapping
-        uint256 reservedBonus = _reserveParlayBonus(totalWithBonus, parlayMultiplier);
-        betParlayReserve[betId] = reservedBonus;
+        // CRITICAL: Check LP pool can cover worst-case payout BEFORE accepting bet
+        uint256 maxPossiblePayout = _calculateMaxPayout(amountAfterFee, matchIndices.length, parlayMultiplier);
+        require(
+            liquidityPoolV2.canCoverPayout(maxPossiblePayout),
+            "Insufficient LP liquidity for this bet"
+        );
 
         // INCREMENT parlay count AFTER calculating multiplier (count-based FOMO)
         // This ensures next bettor sees the tier has moved
@@ -539,7 +562,8 @@ contract BettingPoolV2_1 is Ownable, ReentrancyGuard {
         bet.bettor = msg.sender;
         bet.roundId = currentRoundId;
         bet.amount = amount;
-        bet.bonus = stakeBonus;
+        bet.bonus = 0; // No stake bonus in unified LP model
+        bet.lockedMultiplier = parlayMultiplier;  // CRITICAL FIX: Lock multiplier at bet placement
         bet.settled = false;
         bet.claimed = false;
 
@@ -586,7 +610,7 @@ contract BettingPoolV2_1 is Ownable, ReentrancyGuard {
             msg.sender,
             currentRoundId,
             amount,
-            stakeBonus,
+            0, // No stake bonus in unified LP model
             parlayMultiplier,
             matchIndices,
             outcomes
@@ -609,52 +633,29 @@ contract BettingPoolV2_1 is Ownable, ReentrancyGuard {
         (bool won, uint256 basePayout, uint256 finalPayout) = _calculateBetPayout(betId);
 
         bet.claimed = true;
+        bet.settled = true;
 
         if (won && finalPayout > 0) {
+            // CRITICAL: Check per-round payout cap to prevent excessive payouts
+            require(
+                accounting.totalPaidOut + finalPayout <= MAX_ROUND_PAYOUTS,
+                "Round payout limit reached"
+            );
+
             accounting.totalClaimed += finalPayout;
+            accounting.totalPaidOut += finalPayout; // Track total paid including bonuses
 
-            // Release locked parlay reserve
-            uint256 reservedBonus = betParlayReserve[betId];
-            uint256 actualBonus = finalPayout - basePayout;
-
-            if (reservedBonus > 0) {
-                if (actualBonus <= reservedBonus) {
-                    // Return unused portion and consume reserved for actual bonus
-                    uint256 unused = reservedBonus - actualBonus;
-                    // Remove full reservation
-                    lockedParlayReserve -= reservedBonus;
-                    // Return unused back to protocol reserve
-                    protocolReserve += unused;
-                } else {
-                    // actual bonus exceeds reserved amount: consume reserved and pull extra from protocol reserve
-                    lockedParlayReserve -= reservedBonus;
-                    uint256 extraNeeded = actualBonus - reservedBonus;
-                    require(protocolReserve >= extraNeeded, "Insufficient protocol reserve for parlay payout");
-                    protocolReserve -= extraNeeded;
-                }
-
-                emit ParlayBonusReleased(betId, reservedBonus, actualBonus);
-            }
-
-            // Transfer winnings
-            require(leagueToken.transfer(msg.sender, finalPayout), "Transfer failed");
+            // Pay from LP pool
+            liquidityPoolV2.payWinner(msg.sender, finalPayout);
 
             emit WinningsClaimed(
                 betId,
                 msg.sender,
                 basePayout,
-                _getParlayMultiplier(bet.predictions.length),
+                bet.lockedMultiplier,  // Use locked multiplier instead of recalculating
                 finalPayout
             );
         } else {
-            // Bet lost - release ALL reserved parlay bonus
-            uint256 reservedBonus = betParlayReserve[betId];
-            if (reservedBonus > 0) {
-                lockedParlayReserve -= reservedBonus;
-                protocolReserve += reservedBonus;
-                emit ParlayBonusReleased(betId, reservedBonus, 0);
-            }
-
             emit BetLost(betId, msg.sender);
         }
     }
@@ -719,44 +720,49 @@ contract BettingPoolV2_1 is Ownable, ReentrancyGuard {
         require(accounting.settled, "Round not settled");
         require(!accounting.revenueDistributed, "Already distributed");
 
-        // Net revenue = losing pool - reserved for winners
-        // (Protocol seed is treated as a bet and participates in the market)
-        uint256 netRevenue = accounting.totalLosingPool > accounting.totalReservedForWinners
-            ? accounting.totalLosingPool - accounting.totalReservedForWinners
-            : 0;
+        // Calculate round P&L for LP pool
+        // Total funds in contract = user bets (after fees) + LP seeding
+        uint256 totalInContract = accounting.totalBetVolume + accounting.protocolSeedAmount;
+        uint256 totalPaid = accounting.totalPaidOut; // Includes parlay bonuses
 
-        // Split revenue: 45% protocol + 53% LP + 2% season (Logic2.md economic model)
-        uint256 protocolShare = (netRevenue * PROTOCOL_CUT) / 10000;
-        uint256 seasonShare = (netRevenue * SEASON_POOL_SHARE) / 10000;
-        uint256 lpShare = netRevenue - protocolShare - seasonShare;
+        uint256 profitToLP = 0;
+        uint256 lossFromLP = 0;
 
-        // Track revenue shares
-        accounting.protocolRevenueShare = protocolShare;
-        accounting.lpRevenueShare = lpShare;
-        accounting.seasonRevenueShare = seasonShare;
-        accounting.revenueDistributed = true;
+        if (totalInContract > totalPaid) {
+            // Round was profitable - return all remaining funds to LP pool
+            profitToLP = totalInContract - totalPaid;
 
-        // Distribute
-        if (protocolShare > 0) {
-            require(leagueToken.transfer(protocolTreasury, protocolShare), "Protocol transfer failed");
+            // Transfer back to LP pool
+            require(
+                leagueToken.approve(address(liquidityPoolV2), profitToLP),
+                "Approval failed"
+            );
+            liquidityPoolV2.collectLosingBet(profitToLP);
+        } else if (totalPaid > totalInContract) {
+            // Round was unprofitable - LP already absorbed loss via payWinner()
+            lossFromLP = totalPaid - totalInContract;
+            // No action needed, LP pool already paid out
         }
 
-        if (lpShare > 0) {
-            require(leagueToken.approve(address(liquidityPool), lpShare), "LP approval failed");
-            liquidityPool.addLiquidity(lpShare);
-        }
-
-        if (seasonShare > 0) {
+        // Optional: Season pool allocation from collected bets
+        uint256 seasonShare = (accounting.totalBetVolume * SEASON_POOL_SHARE) / 10000;
+        if (seasonShare > 0 && profitToLP > seasonShare) {
+            // Deduct from profit being returned to LP
+            profitToLP -= seasonShare;
             seasonRewardPool += seasonShare;
         }
 
+        accounting.lpRevenueShare = profitToLP;
+        accounting.seasonRevenueShare = seasonShare;
+        accounting.revenueDistributed = true;
+
         emit RoundRevenueFinalized(
             roundId,
-            netRevenue,
-            protocolShare,
-            lpShare,
-            seasonShare,
-            accounting.protocolSeedAmount
+            totalInContract,
+            totalPaid,
+            profitToLP,
+            lossFromLP,
+            seasonShare
         );
     }
 
@@ -782,16 +788,27 @@ contract BettingPoolV2_1 is Ownable, ReentrancyGuard {
      * @param numLegs Number of matches in multibet
      * @return multiplier Multiplier in 1e18 scale (e.g., 1.5e18 = 1.5x)
      */
-    function _getParlayMultiplier(uint256 numLegs)
+    /**
+     * @notice Get base parlay multiplier based on number of matches (UPDATED: linear 1.15x-1.5x)
+     * @dev Linear progression: 1 match = 1.0x, 2 matches = 1.15x, 10 matches = 1.5x
+     * @param numMatches Number of matches in the parlay
+     * @return multiplier Multiplier in 1e18 scale
+     */
+    function _getParlayMultiplier(uint256 numMatches)
         internal
         pure
         returns (uint256 multiplier)
     {
-        if (numLegs == 1) return PARLAY_MULTIPLIER_1_LEG;      // 1.0x
-        if (numLegs == 2) return PARLAY_MULTIPLIER_2_LEGS;     // 1.2x
-        if (numLegs == 3) return PARLAY_MULTIPLIER_3_LEGS;     // 1.5x
-        if (numLegs == 4) return PARLAY_MULTIPLIER_4_LEGS;     // 2.0x
-        return PARLAY_MULTIPLIER_5_PLUS;                        // 2.5x (capped)
+        if (numMatches == 1) return PARLAY_MULTIPLIER_1_MATCH;      // 1.0x
+        if (numMatches == 2) return PARLAY_MULTIPLIER_2_MATCHES;    // 1.15x
+        if (numMatches == 3) return PARLAY_MULTIPLIER_3_MATCHES;    // 1.194x
+        if (numMatches == 4) return PARLAY_MULTIPLIER_4_MATCHES;    // 1.238x
+        if (numMatches == 5) return PARLAY_MULTIPLIER_5_MATCHES;    // 1.281x
+        if (numMatches == 6) return PARLAY_MULTIPLIER_6_MATCHES;    // 1.325x
+        if (numMatches == 7) return PARLAY_MULTIPLIER_7_MATCHES;    // 1.369x
+        if (numMatches == 8) return PARLAY_MULTIPLIER_8_MATCHES;    // 1.413x
+        if (numMatches == 9) return PARLAY_MULTIPLIER_9_MATCHES;    // 1.456x
+        return PARLAY_MULTIPLIER_10_MATCHES;                         // 1.5x (capped at 10)
     }
 
     /**
@@ -844,18 +861,9 @@ contract BettingPoolV2_1 is Ownable, ReentrancyGuard {
      * @dev Higher locked reserve = lower multipliers (capital protection)
      * @return decayFactor Percentage to apply to multiplier (10000 = 100%)
      */
-    function _getReserveDecayFactor() internal view returns (uint256 decayFactor) {
-        uint256 locked = lockedParlayReserve;
-
-        if (locked < RESERVE_TIER_1) {
-            return TIER_1_DECAY; // 100% (no decay)
-        } else if (locked < RESERVE_TIER_2) {
-            return TIER_2_DECAY; // 88% (12% decay)
-        } else if (locked < RESERVE_TIER_3) {
-            return TIER_3_DECAY; // 76% (24% decay)
-        } else {
-            return TIER_4_DECAY; // 64% (36% decay)
-        }
+    function _getReserveDecayFactor() internal pure returns (uint256 decayFactor) {
+        // In unified LP model, no reserve decay - LP pool manages all risk
+        return 10000; // 100% (no decay)
     }
 
     /**
@@ -881,8 +889,8 @@ contract BettingPoolV2_1 is Ownable, ReentrancyGuard {
 
         RoundAccounting storage accounting = roundAccounting[roundId];
 
-        // LAYER 1: Count-based tier (PRIMARY FOMO)
-        uint256 countBasedMult = _getParlayMultiplierByCount(accounting.parlayCount);
+        // LAYER 1: Base multiplier based on number of matches (NEW: Linear 1.15x-1.5x)
+        uint256 countBasedMult = _getParlayMultiplier(numLegs);
 
         // LAYER 2: Pool imbalance gating (ECONOMIC PROTECTION)
         uint256 totalImbalance = 0;
@@ -965,25 +973,16 @@ contract BettingPoolV2_1 is Ownable, ReentrancyGuard {
      * @dev Reserves max possible bonus (pessimistic estimate)
      * @return maxBonus The amount reserved from protocol reserve
      */
-    function _reserveParlayBonus(uint256 totalStake, uint256 parlayMultiplier)
+    /**
+     * @notice No longer used - parlay bonuses paid directly from LP pool
+     * @dev Kept for backwards compatibility, always returns 0
+     */
+    function _reserveParlayBonus(uint256, uint256)
         internal
-        returns (uint256 maxBonus)
+        pure
+        returns (uint256)
     {
-        if (parlayMultiplier == 1e18) return 0; // No bonus for single bets
-
-        // Pessimistic estimate: assume 10x base payout (very high odds)
-        uint256 maxBasePayout = totalStake * 10;
-
-        // Calculate max bonus needed
-        maxBonus = (maxBasePayout * (parlayMultiplier - 1e18)) / 1e18;
-
-        require(protocolReserve >= maxBonus, "Insufficient reserve for parlay bonus");
-
-        // Lock the bonus (caller will store betId mapping)
-        lockedParlayReserve += maxBonus;
-        protocolReserve -= maxBonus;
-
-        return maxBonus;
+        return 0; // No upfront reservation in unified LP model
     }
 
     /**
@@ -1045,9 +1044,14 @@ contract BettingPoolV2_1 is Ownable, ReentrancyGuard {
             return (false, 0, 0);
         }
 
-        // Apply DYNAMIC parlay multiplier (Logic2.md)
-        uint256 parlayMultiplier = _getParlayMultiplierDynamic(betId);
+        // Apply LOCKED parlay multiplier (CRITICAL FIX: use stored value from bet placement)
+        uint256 parlayMultiplier = bet.lockedMultiplier;
         uint256 totalFinalPayout = (totalBasePayout * parlayMultiplier) / 1e18;
+
+        // CRITICAL: Cap maximum payout per bet to protect protocol reserve
+        if (totalFinalPayout > MAX_PAYOUT_PER_BET) {
+            totalFinalPayout = MAX_PAYOUT_PER_BET;
+        }
 
         return (true, totalBasePayout, totalFinalPayout);
     }
@@ -1112,24 +1116,27 @@ contract BettingPoolV2_1 is Ownable, ReentrancyGuard {
      * @notice Fund protocol reserve (required for bonuses and seeding)
      * @param amount Amount of LEAGUE to add
      */
-    function fundProtocolReserve(uint256 amount) external {
-        require(amount > 0, "Amount must be > 0");
-        require(
-            leagueToken.transferFrom(msg.sender, address(this), amount),
-            "Transfer failed"
-        );
-
-        protocolReserve += amount;
-
-        emit ProtocolReserveFunded(msg.sender, amount);
-    }
-
     /**
-     * @notice Update protocol treasury address
+     * @notice Calculate maximum possible payout for a bet
+     * @dev Used to check if LP pool can cover potential winnings
      */
-    function setProtocolTreasury(address _treasury) external onlyOwner {
-        require(_treasury != address(0), "Invalid address");
-        protocolTreasury = _treasury;
+    function _calculateMaxPayout(uint256 amount, uint256 numMatches, uint256 parlayMultiplier)
+        internal
+        pure
+        returns (uint256)
+    {
+        // Pessimistic estimate: assume best case odds (2x per match in worst case)
+        uint256 maxBasePayout = amount * (2 ** numMatches);
+
+        // Apply parlay multiplier
+        uint256 maxFinalPayout = (maxBasePayout * parlayMultiplier) / 1e18;
+
+        // Apply per-bet cap
+        if (maxFinalPayout > MAX_PAYOUT_PER_BET) {
+            maxFinalPayout = MAX_PAYOUT_PER_BET;
+        }
+
+        return maxFinalPayout;
     }
 
     /**
@@ -1327,6 +1334,7 @@ contract BettingPoolV2_1 is Ownable, ReentrancyGuard {
             uint256 roundId,
             uint256 amount,
             uint256 bonus,
+            uint256 lockedMultiplier,
             bool settled,
             bool claimed
         )
@@ -1337,6 +1345,7 @@ contract BettingPoolV2_1 is Ownable, ReentrancyGuard {
             bet.roundId,
             bet.amount,
             bet.bonus,
+            bet.lockedMultiplier,
             bet.settled,
             bet.claimed
         );
@@ -1416,6 +1425,7 @@ contract BettingPoolV2_1 is Ownable, ReentrancyGuard {
 
     /**
      * @notice Preview bet payout (including parlay multiplier)
+     * @dev Uses locked multiplier from bet placement for accurate preview
      */
     function previewBetPayout(uint256 betId)
         external
@@ -1423,7 +1433,7 @@ contract BettingPoolV2_1 is Ownable, ReentrancyGuard {
         returns (bool won, uint256 basePayout, uint256 finalPayout, uint256 parlayMultiplier)
     {
         (won, basePayout, finalPayout) = _calculateBetPayout(betId);
-        parlayMultiplier = _getParlayMultiplier(bets[betId].predictions.length);
+        parlayMultiplier = bets[betId].lockedMultiplier;  // Use locked multiplier
         return (won, basePayout, finalPayout, parlayMultiplier);
     }
 }
