@@ -214,39 +214,77 @@ export default function Season() {
         </div>
       </motion.div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {TEAMS.map((team) => (
-          <div 
-            key={team.id}
-            onClick={() => setSelectedTeam(team.id)}
-            className={cn(
-              "group cursor-pointer rounded-2xl border bg-white p-6 transition-all duration-300 relative overflow-hidden",
-              selectedTeam === team.id 
-                ? "border-primary ring-2 ring-primary/20 shadow-xl" 
-                : "border-border hover:border-gray-300 hover:shadow-lg hover:-translate-y-1"
-            )}
-          >
-            <div className="flex items-center justify-between mb-4 relative z-10">
-              <div className={cn("w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-xl shadow-md", team.color)}>
-                {team.name.charAt(0)}
-              </div>
-              {selectedTeam === team.id && (
-                <div className="bg-primary text-white p-1.5 rounded-full shadow-lg animate-in zoom-in">
-                  <ShieldCheck className="w-5 h-5" />
-                </div>
+      {/* Team Selection Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {TEAM_IDS.map((teamId) => {
+          const { data: team } = useTeam(teamId);
+          const predictorCount = distribution ? Number(distribution[teamId]) : 0;
+          const isSelected = selectedTeam === teamId;
+          const isPredicted = predictedTeamId === teamId;
+          
+          return (
+            <motion.div
+              key={teamId}
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: teamId * 0.02 }}
+              onClick={() => !hasPredicted && !predictionsLocked && setSelectedTeam(teamId)}
+              className={cn(
+                "group cursor-pointer rounded-2xl border bg-white p-5 transition-all duration-300 relative overflow-hidden",
+                isSelected
+                  ? "border-primary ring-2 ring-primary/20 shadow-xl scale-105"
+                  : isPredicted
+                  ? "border-blue-500 ring-2 ring-blue-500/20 shadow-lg"
+                  : "border-border hover:border-gray-300 hover:shadow-lg hover:-translate-y-1",
+                (hasPredicted || predictionsLocked) && !isPredicted && "opacity-50 cursor-not-allowed"
               )}
-            </div>
-            
-            <h3 className="text-xl font-bold text-gray-900 mb-1 relative z-10">{team.name}</h3>
-            <p className="text-sm text-gray-500 relative z-10">Current Rank: #{(team.id % 4) + 1}</p>
+            >
+              <div className="flex items-center justify-between mb-3 relative z-10">
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center text-primary font-bold text-xl shadow-md border border-primary/20">
+                  {team?.name?.charAt(0) || "T"}
+                </div>
+                {isSelected && !hasPredicted && (
+                  <motion.div
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    className="bg-primary text-white p-1.5 rounded-full shadow-lg"
+                  >
+                    <ShieldCheck className="w-5 h-5" />
+                  </motion.div>
+                )}
+                {isPredicted && (
+                  <div className="bg-blue-500 text-white p-1.5 rounded-full shadow-lg">
+                    <CheckCircle2 className="w-5 h-5" />
+                  </div>
+                )}
+              </div>
 
-            {/* Selection Overlay Effect */}
-            <div className={cn(
-              "absolute inset-0 bg-primary/5 transition-opacity duration-300",
-              selectedTeam === team.id ? "opacity-100" : "opacity-0 group-hover:opacity-50"
-            )} />
-          </div>
-        ))}
+              <h3 className="text-lg font-bold text-gray-900 mb-1 relative z-10 line-clamp-1">
+                {team?.name || `Team ${teamId}`}
+              </h3>
+              <div className="flex items-center justify-between text-xs text-gray-500 relative z-10">
+                <span>{predictorCount} predictions</span>
+                {totalPredictors > 0 && (
+                  <span className="font-semibold text-primary">
+                    {((predictorCount / totalPredictors) * 100).toFixed(1)}%
+                  </span>
+                )}
+              </div>
+
+              {/* Selection Overlay Effect */}
+              <div
+                className={cn(
+                  "absolute inset-0 bg-gradient-to-br transition-opacity duration-300",
+                  isSelected
+                    ? "from-primary/10 to-primary/5 opacity-100"
+                    : isPredicted
+                    ? "from-blue-500/10 to-blue-500/5 opacity-100"
+                    : "from-primary/5 to-transparent opacity-0 group-hover:opacity-100"
+                )}
+              />
+            </motion.div>
+          );
+        })}
       </div>
 
       <div className="flex justify-end pt-8">
