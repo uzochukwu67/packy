@@ -1,18 +1,111 @@
-import { Trophy, Star, ShieldCheck } from "lucide-react";
+import { Trophy, Star, ShieldCheck, Loader2, CheckCircle2, Coins, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
-
-const TEAMS = [
-  { id: 1, name: "Manchester City", color: "bg-blue-400" },
-  { id: 2, name: "Arsenal", color: "bg-red-500" },
-  { id: 3, name: "Liverpool", color: "bg-red-700" },
-  { id: 4, name: "Chelsea", color: "bg-blue-700" },
-  { id: 5, name: "Tottenham", color: "bg-indigo-900" },
-  { id: 6, name: "Man United", color: "bg-red-600" },
-];
+import { useState, useEffect } from "react";
+import { useAccount } from "wagmi";
+import { motion, AnimatePresence } from "framer-motion";
+import { 
+  useSeasonPrizePool, 
+  useMakePrediction, 
+  useUserPrediction,
+  useCanClaimPrize,
+  useClaimPrize,
+  usePredictionDistribution
+} from "@/hooks/contracts/useSeasonPredictor";
+import { useCurrentSeason, useTeam, useSeason } from "@/hooks/contracts/useGameEngine";
+import { formatToken } from "@/contracts/types";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Season() {
   const [selectedTeam, setSelectedTeam] = useState<number | null>(null);
+  const { isConnected, address } = useAccount();
+  const { toast } = useToast();
+
+  // Get current season data
+  const { data: seasonId } = useCurrentSeason();
+  const { data: season } = useSeason(seasonId);
+  const { data: prizePool } = useSeasonPrizePool(seasonId);
+  const { data: userPrediction } = useUserPrediction(seasonId, address);
+  const { data: canClaimData } = useCanClaimPrize(seasonId, address);
+  const { data: distribution } = usePredictionDistribution(seasonId);
+
+  // Write operations
+  const { makePrediction, isConfirming: isPredicting, isSuccess: predictSuccess } = useMakePrediction();
+  const { claimPrize, isConfirming: isClaiming, isSuccess: claimSuccess } = useClaimPrize();
+
+  // Check if user can claim
+  const canClaim = canClaimData ? canClaimData[0] : false;
+  const prizeAmount = canClaimData ? canClaimData[1] : 0n;
+
+  // Check if predictions are locked (season started)
+  const predictionsLocked = season ? Number(season.currentRound) > 0 : false;
+
+  // Parse user prediction (returns type(uint256).max if no prediction)
+  const hasPredicted = userPrediction !== undefined && userPrediction !== BigInt(2**256 - 1);
+  const predictedTeamId = hasPredicted ? Number(userPrediction) : null;
+
+  // Set selected team from user's prediction
+  useEffect(() => {
+    if (hasPredicted && predictedTeamId !== null) {
+      setSelectedTeam(predictedTeamId);
+    }
+  }, [hasPredicted, predictedTeamId]);
+
+  // Handle success
+  useEffect(() => {
+    if (predictSuccess) {
+      toast({
+        title: "Prediction Submitted! 🎯",
+        description: "Your season winner prediction has been recorded.",
+        className: "bg-green-50 border-green-200 text-green-900",
+      });
+    }
+  }, [predictSuccess, toast]);
+
+  useEffect(() => {
+    if (claimSuccess) {
+      toast({
+        title: "Prize Claimed! 🎉",
+        description: `You received ${formatToken(prizeAmount)} LEAGUE tokens!`,
+        className: "bg-green-50 border-green-200 text-green-900",
+      });
+    }
+  }, [claimSuccess, prizeAmount, toast]);
+
+  const handlePredict = async () => {
+    if (selectedTeam === null || !isConnected) return;
+    try {
+      await makePrediction(selectedTeam);
+    } catch (err: any) {
+      console.error("Prediction failed:", err);
+      toast({
+        title: "Prediction Failed",
+        description: err.message || "Failed to submit prediction.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleClaim = async () => {
+    if (!seasonId || !isConnected) return;
+    try {
+      await claimPrize(seasonId);
+    } catch (err: any) {
+      console.error("Claim failed:", err);
+      toast({
+        title: "Claim Failed",
+        description: err.message || "Failed to claim prize.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Calculate total predictors
+  const totalPredictors = distribution 
+    ? Array.from(distribution).reduce((sum, count) => sum + Number(count), 0)
+    : 0;
+
+  // Fetch team names for all 20 teams
+  const TEAM_IDS = Array.from({ length: 20 }, (_, i) => i);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
