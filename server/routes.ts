@@ -596,5 +596,67 @@ export async function registerRoutes(
     }
   });
 
+  /**
+   * Get round results with matches and all bets
+   * GET /api/game/rounds/:roundId/results
+   */
+  app.get('/api/game/rounds/:roundId/results', async (req, res) => {
+    try {
+      const { roundId } = req.params;
+
+      // Get round details
+      const round = await storage.getRoundById(roundId);
+      if (!round) {
+        return res.status(404).json({
+          error: 'Round not found'
+        });
+      }
+
+      // Get all matches for this round
+      const matches = await storage.getMatchesByRound(roundId);
+
+      // Get all bets for this round (from all users)
+      const allBets = await db.select().from(bets).where(eq(bets.roundId, roundId));
+
+      // Format bets with parsed JSON fields
+      const formattedBets = allBets.map(bet => ({
+        ...bet,
+        matchIndices: JSON.parse(bet.matchIndices),
+        outcomes: JSON.parse(bet.outcomes),
+      }));
+
+      // Calculate statistics
+      const totalBets = formattedBets.length;
+      const totalVolume = formattedBets.reduce((sum, bet) => sum + BigInt(bet.amount), 0n);
+      const wonBets = formattedBets.filter(b => b.status === 'won' || b.status === 'claimed').length;
+      const lostBets = formattedBets.filter(b => b.status === 'lost').length;
+      const pendingBets = formattedBets.filter(b => b.status === 'pending').length;
+
+      res.json({
+        round: {
+          roundId: round.roundId,
+          seasonId: round.seasonId,
+          startTime: round.startTime,
+          endTime: round.endTime,
+          vrfFulfilled: !!round.vrfFulfilledAt,
+          settled: round.settled,
+        },
+        matches,
+        bets: formattedBets,
+        statistics: {
+          totalBets,
+          totalVolume: totalVolume.toString(),
+          wonBets,
+          lostBets,
+          pendingBets,
+        },
+      });
+    } catch (error: any) {
+      return res.status(500).json({
+        error: error.message || 'Failed to get round results'
+      });
+    }
+  });
+
   return httpServer;
 }
