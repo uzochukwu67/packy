@@ -36,12 +36,14 @@ export function MatchCard({ roundId, matchIndex, match, startTime }: MatchCardPr
     return bets.some(b => b.matchId === matchId && b.selection === selection);
   };
 
-  const handleSelect = (selection: string, odds: number, outcome: number) => {
+  const handleSelect = (selection: string, odds: number, outcome: 1 | 2 | 3) => {
     addBet({
       id: `${matchId}-${selection}`,
       matchId,
+      matchIndex,
       matchTitle: `${teamA} vs ${teamB}`,
       selection,
+      outcome,
       odds,
     });
   };
