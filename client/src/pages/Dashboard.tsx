@@ -62,7 +62,7 @@ export default function Dashboard() {
                   ? `Season ${seasonId?.toString()} - Completed`
                   : season?.active
                     ? `Season ${seasonId?.toString()} - Active`
-                    : 'No Active Season on '} {chainId}
+                    : 'No Active Season on '}
               </h2>
             </div>
             {season?.active && (

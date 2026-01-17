@@ -9,6 +9,8 @@ import Dashboard from "@/pages/Dashboard";
 import Liquidity from "@/pages/Liquidity";
 import MyBets from "@/pages/MyBets";
 import Season from "@/pages/Season";
+import History from "@/pages/History";
+import RoundResults from "@/pages/RoundResults";
 import NotFound from "@/pages/not-found";
 import { MainLayout } from "@/components/layout/MainLayout";
 
@@ -23,6 +25,8 @@ function Router() {
         <Route path="/liquidity" component={Liquidity} />
         <Route path="/my-bets" component={MyBets} />
         <Route path="/season" component={Season} />
+        <Route path="/history" component={History} />
+        <Route path="/rounds/:roundId" component={RoundResults} />
         <Route component={NotFound} />
       </Switch>
     </MainLayout>

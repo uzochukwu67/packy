@@ -25,6 +25,7 @@ export interface IStorage {
   getUserBets(walletAddress: string, limit?: number, offset?: number): Promise<Bet[]>;
   getUserBetsByRound(walletAddress: string, roundId: string): Promise<Bet[]>;
   getUserBetsBySeason(walletAddress: string, seasonId: string): Promise<Bet[]>;
+  getBetsByRound(roundId: string): Promise<Bet[]>;
   updateBetStatus(betId: string, status: string, settledAt?: Date): Promise<Bet | undefined>;
 
   // Round operations
@@ -32,6 +33,8 @@ export interface IStorage {
   getRoundById(roundId: string): Promise<Round | undefined>;
   updateRound(roundId: string, updates: Partial<InsertRound>): Promise<Round | undefined>;
   getActiveRound(): Promise<Round | undefined>;
+  getAllRounds(limit?: number, offset?: number): Promise<Round[]>;
+  getRoundsBySeason(seasonId: string): Promise<Round[]>;
 
   // Match operations
   saveMatch(match: InsertMatch): Promise<Match>;
@@ -89,6 +92,14 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(bets.placedAt));
   }
 
+  async getBetsByRound(roundId: string): Promise<Bet[]> {
+    return db
+      .select()
+      .from(bets)
+      .where(eq(bets.roundId, roundId))
+      .orderBy(desc(bets.placedAt));
+  }
+
   async updateBetStatus(betId: string, status: string, settledAt?: Date): Promise<Bet | undefined> {
     const [bet] = await db
       .update(bets)
@@ -130,6 +141,23 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(rounds.startTime))
       .limit(1);
     return round;
+  }
+
+  async getAllRounds(limit: number = 100, offset: number = 0): Promise<Round[]> {
+    return db
+      .select()
+      .from(rounds)
+      .orderBy(desc(rounds.startTime))
+      .limit(limit)
+      .offset(offset);
+  }
+
+  async getRoundsBySeason(seasonId: string): Promise<Round[]> {
+    return db
+      .select()
+      .from(rounds)
+      .where(eq(rounds.seasonId, seasonId))
+      .orderBy(desc(rounds.roundId));
   }
 
   // ============ Match Operations ============

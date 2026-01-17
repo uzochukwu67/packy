@@ -244,6 +244,65 @@ async function syncBetLost(betId: bigint, bettor: string) {
 }
 
 /**
+ * Manually sync a specific round's state from blockchain to database
+ * Useful for fixing desync issues or initial sync
+ */
+export async function manualSyncRound(roundId: bigint) {
+  try {
+    log(`Manual sync for round ${roundId}...`);
+
+    // Get round data from blockchain
+    const roundData = await publicClient.readContract({
+      address: CONTRACTS.gameEngine,
+      abi: GameEngineABI as any,
+      functionName: 'getRound',
+      args: [roundId],
+    }) as any;
+
+    const isSettled = await publicClient.readContract({
+      address: CONTRACTS.gameEngine,
+      abi: GameEngineABI as any,
+      functionName: 'isRoundSettled',
+      args: [roundId],
+    }) as boolean;
+
+    // Get match data
+    const matches = await publicClient.readContract({
+      address: CONTRACTS.gameEngine,
+      abi: GameEngineABI as any,
+      functionName: 'getRoundMatches',
+      args: [roundId],
+    }) as any[];
+
+    // Update round in database
+    await storage.updateRound(roundId.toString(), {
+      settled: isSettled,
+      isActive: !isSettled,
+      settledAt: isSettled ? new Date() : undefined,
+      vrfRequestId: roundData.vrfRequestId?.toString(),
+      vrfFulfilledAt: roundData.settled ? new Date() : undefined,
+    });
+
+    // Update all matches
+    for (let i = 0; i < matches.length; i++) {
+      const match = matches[i];
+      await storage.updateMatch(roundId.toString(), i, {
+        homeScore: Number(match.homeScore),
+        awayScore: Number(match.awayScore),
+        outcome: getOutcome(Number(match.outcome)),
+        settled: match.settled,
+        settledAt: match.settled ? new Date() : undefined,
+      });
+    }
+
+    log(`✅ Round ${roundId} manually synced (settled: ${isSettled})`);
+  } catch (error: any) {
+    log(`Failed to manually sync round ${roundId}: ${error.message}`, 'error');
+    throw error;
+  }
+}
+
+/**
  * Start listening to blockchain events
  */
 export function startEventListeners() {
@@ -296,6 +355,22 @@ export function startEventListeners() {
     },
     onError: (error: any) => {
       log(`RoundSettled event error: ${error.message}`, 'error');
+    },
+  });
+
+  // Also listen for RoundSettled from BettingPool (emitted during settleRound)
+  publicClient.watchContractEvent({
+    address: CONTRACTS.bettingPool,
+    abi: BettingPoolABI as any,
+    eventName: 'RoundSettled',
+    onLogs: async (logs: any[]) => {
+      for (const eventLog of logs) {
+        const { roundId } = eventLog.args as any;
+        await syncRoundSettled(roundId);
+      }
+    },
+    onError: (error: any) => {
+      log(`BettingPool RoundSettled event error: ${error.message}`, 'error');
     },
   });
 

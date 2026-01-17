@@ -18,6 +18,7 @@ import {
   seedRoundPools,
   finalizeRoundRevenue,
 } from "./web3/game-monitor";
+import { manualSyncRound } from "./web3/event-sync";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -31,10 +32,13 @@ export async function registerRoutes(
 
       if (!user) {
         user = await storage.createUser(input);
-        return res.status(201).json(user);
+        return res.status(201).json({
+          success: true,
+          user,
+        });
       }
 
-      res.json(user);
+      return res.json(user);
     } catch (err) {
       if (err instanceof z.ZodError) {
         return res.status(400).json({
@@ -86,7 +90,7 @@ export async function registerRoutes(
   app.get('/api/faucet/stats', async (_req, res) => {
     try {
       const stats = await getFaucetStats();
-      res.json(stats);
+      return res.json(stats);
     } catch (error: any) {
       return res.status(500).json({
         error: error.message || 'Failed to get faucet stats'
@@ -107,7 +111,7 @@ export async function registerRoutes(
       }
 
       const history = getUserFaucetHistory(address as `0x${string}`);
-      res.json(history);
+      return res.json(history);
     } catch (error: any) {
       return res.status(500).json({
         error: error.message || 'Failed to get faucet history'
@@ -128,7 +132,7 @@ export async function registerRoutes(
       }
 
       const result = canRequestTokens(address as `0x${string}`);
-      res.json(result);
+      return res.json(result);
     } catch (error: any) {
       return res.status(500).json({
         error: error.message || 'Failed to check request status'
@@ -171,7 +175,7 @@ export async function registerRoutes(
         shouldSettleRound: state.shouldSettleRound,
       };
 
-      res.json(serializedState);
+      return res.json(serializedState);
     } catch (error: any) {
       return res.status(500).json({
         error: error.message || 'Failed to get game state'
@@ -188,9 +192,9 @@ export async function registerRoutes(
       const result = await startSeason();
 
       if (result.success) {
-        res.json(result);
+        return res.json(result);
       } else {
-        res.status(500).json(result);
+        return res.status(500).json(result);
       }
     } catch (error: any) {
       return res.status(500).json({
@@ -209,9 +213,9 @@ export async function registerRoutes(
       const result = await startRound();
 
       if (result.success) {
-        res.json(result);
+        return res.json(result);
       } else {
-        res.status(500).json(result);
+        return res.status(500).json(result);
       }
     } catch (error: any) {
       return res.status(500).json({
@@ -232,9 +236,9 @@ export async function registerRoutes(
       const result = await requestMatchResults(enableNativePayment);
 
       if (result.success) {
-        res.json(result);
+        return res.json(result);
       } else {
-        res.status(500).json(result);
+        return res.status(500).json(result);
       }
     } catch (error: any) {
       return res.status(500).json({
@@ -263,9 +267,9 @@ export async function registerRoutes(
       const result = await settleRound(BigInt(roundId));
 
       if (result.success) {
-        res.json(result);
+        return res.json(result);
       } else {
-        res.status(500).json(result);
+        return res.status(500).json(result);
       }
     } catch (error: any) {
       return res.status(500).json({
@@ -307,6 +311,36 @@ export async function registerRoutes(
   });
 
   /**
+   * Manually sync round from blockchain to database
+   * POST /api/admin/sync-round
+   * Body: { roundId: string }
+   */
+  app.post('/api/admin/sync-round', async (req, res) => {
+    try {
+      const { roundId } = req.body;
+
+      if (!roundId) {
+        return res.status(400).json({
+          success: false,
+          error: 'roundId is required'
+        });
+      }
+
+      await manualSyncRound(BigInt(roundId));
+
+      return res.json({
+        success: true,
+        message: `Round ${roundId} synced successfully`
+      });
+    } catch (error: any) {
+      return res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to sync round'
+      });
+    }
+  });
+
+  /**
    * Finalize round revenue distribution
    * POST /api/admin/finalize-revenue
    * Body: { roundId: string }
@@ -325,9 +359,9 @@ export async function registerRoutes(
       const result = await finalizeRoundRevenue(BigInt(roundId));
 
       if (result.success) {
-        res.json(result);
+        return res.json(result);
       } else {
-        res.status(500).json(result);
+        return res.status(500).json(result);
       }
     } catch (error: any) {
       return res.status(500).json({
@@ -376,7 +410,7 @@ export async function registerRoutes(
         txHash
       });
 
-      res.json(bet);
+      return res.json(bet);
     } catch (error: any) {
       return res.status(500).json({
         error: error.message || 'Failed to save bet'
@@ -418,7 +452,7 @@ export async function registerRoutes(
         outcomes: JSON.parse(bet.outcomes)
       }));
 
-      res.json(formattedBets);
+      return res.json(formattedBets);
     } catch (error: any) {
       return res.status(500).json({
         error: error.message || 'Failed to get bets'
@@ -448,7 +482,7 @@ export async function registerRoutes(
         return res.status(404).json({ error: 'Bet not found' });
       }
 
-      res.json(bet);
+      return res.json(bet);
     } catch (error: any) {
       return res.status(500).json({
         error: error.message || 'Failed to update bet status'
@@ -478,7 +512,7 @@ export async function registerRoutes(
       const endTime = activeRound.endTime?.getTime() || 0;
       const timeRemainingMs = Math.max(0, endTime - now);
 
-      res.json({
+      return res.json({
         hasActiveRound: true,
         round: {
           roundId: activeRound.roundId,
@@ -517,7 +551,7 @@ export async function registerRoutes(
 
       const matches = await storage.getMatchesByRound(activeRound.roundId);
 
-      res.json({
+      returnres.json({
         hasActiveRound: true,
         roundId: activeRound.roundId,
         matches,
@@ -546,7 +580,7 @@ export async function registerRoutes(
 
       const matches = await storage.getMatchesByRound(roundId);
 
-      res.json({
+      return res.json({
         round: {
           roundId: round.roundId,
           seasonId: round.seasonId,
@@ -561,6 +595,34 @@ export async function registerRoutes(
     } catch (error: any) {
       return res.status(500).json({
         error: error.message || 'Failed to get round matches'
+      });
+    }
+  });
+
+  /**
+   * Get all rounds (paginated)
+   * GET /api/game/rounds
+   * Query params: ?limit=100&offset=0&seasonId=1
+   */
+  app.get('/api/game/rounds', async (req, res) => {
+    try {
+      const { limit = '100', offset = '0', seasonId } = req.query;
+
+      let roundsData;
+
+      if (seasonId) {
+        // Get rounds for specific season
+        roundsData = await storage.getRoundsBySeason(seasonId as string);
+      } else {
+        // Get all rounds with pagination
+        roundsData = await storage.getAllRounds(parseInt(limit as string), parseInt(offset as string));
+      }
+
+      console.log(roundsData);
+      return res.json(roundsData);
+    } catch (error: any) {
+      return res.status(500).json({
+        error: error.message || 'Failed to get rounds'
       });
     }
   });
@@ -584,7 +646,7 @@ export async function registerRoutes(
       const endTime = round.endTime?.getTime() || 0;
       const timeRemainingMs = Math.max(0, endTime - now);
 
-      res.json({
+      return res.json({
         ...round,
         timeRemainingMs,
         isActive: round.isActive && timeRemainingMs > 0,
@@ -615,11 +677,11 @@ export async function registerRoutes(
       // Get all matches for this round
       const matches = await storage.getMatchesByRound(roundId);
 
-      // Get all bets for this round (from all users)
-      const allBets = await db.select().from(bets).where(eq(bets.roundId, roundId));
+      // Get all bets for this round
+      const allBets = await storage.getBetsByRound(roundId);
 
       // Format bets with parsed JSON fields
-      const formattedBets = allBets.map(bet => ({
+      const formattedBets = allBets.map((bet: any) => ({
         ...bet,
         matchIndices: JSON.parse(bet.matchIndices),
         outcomes: JSON.parse(bet.outcomes),
@@ -627,12 +689,12 @@ export async function registerRoutes(
 
       // Calculate statistics
       const totalBets = formattedBets.length;
-      const totalVolume = formattedBets.reduce((sum, bet) => sum + BigInt(bet.amount), 0n);
-      const wonBets = formattedBets.filter(b => b.status === 'won' || b.status === 'claimed').length;
-      const lostBets = formattedBets.filter(b => b.status === 'lost').length;
-      const pendingBets = formattedBets.filter(b => b.status === 'pending').length;
+      const totalVolume = formattedBets.reduce((sum: bigint, bet: any) => sum + BigInt(bet.amount), BigInt(0));
+      const wonBets = formattedBets.filter((b: any) => b.status === 'won' || b.status === 'claimed').length;
+      const lostBets = formattedBets.filter((b: any) => b.status === 'lost').length;
+      const pendingBets = formattedBets.filter((b: any) => b.status === 'pending').length;
 
-      res.json({
+      return res.json({
         round: {
           roundId: round.roundId,
           seasonId: round.seasonId,

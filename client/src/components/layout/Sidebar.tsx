@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, Coins, History, Trophy, Wallet, Droplet, CheckCircle, Loader2 } from "lucide-react";
+import { LayoutDashboard, Coins, History, Trophy, Wallet, Droplet, CheckCircle, Loader2, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
 import { injected, metaMask } from "wagmi/connectors";
@@ -21,6 +21,7 @@ export function Sidebar() {
     { label: "Betting Dashboard", icon: LayoutDashboard, href: "/" },
     { label: "Liquidity Pool", icon: Coins, href: "/liquidity" },
     { label: "My Bets", icon: History, href: "/my-bets" },
+    { label: "Round History", icon: Clock, href: "/history" },
     { label: "Season Predictor", icon: Trophy, href: "/season" },
   ];
 
@@ -108,7 +109,7 @@ export function Sidebar() {
             ) : (
               <>
                 <Droplet className="w-4 h-4" />
-                Get 1000 LEAGUE on {chainId}
+                Get 1000 LEAGUE
               </>
             )}
           </button>
