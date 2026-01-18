@@ -171,6 +171,7 @@ export async function registerRoutes(
         } : null,
         roundSettled: state.roundSettled,
         timeUntilRoundEnd: state.timeUntilRoundEnd,
+        timeUntilNextRound: state.timeUntilNextRound,
         shouldRequestVRF: state.shouldRequestVRF,
         shouldSettleRound: state.shouldSettleRound,
       };

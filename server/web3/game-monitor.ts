@@ -28,6 +28,7 @@ export interface GameState {
   } | null;
   roundSettled: boolean;
   timeUntilRoundEnd?: number;
+  timeUntilNextRound?: number;
   shouldRequestVRF: boolean;
   shouldSettleRound: boolean;
 }
@@ -55,6 +56,7 @@ export async function getGameState(): Promise<GameState> {
     let round = null;
     let roundSettled = false;
     let timeUntilRoundEnd = undefined;
+    let timeUntilNextRound = undefined;
     let shouldRequestVRF = false;
     let shouldSettleRound = false;
 
@@ -108,6 +110,24 @@ export async function getGameState(): Promise<GameState> {
       }
     }
 
+    // Calculate time until next round starts (if current round is settled)
+    if (roundSettled) {
+      // If we don't have the settlement time in memory, fetch from database
+      if (lastSettledRoundId !== currentRoundId || roundSettledAt === null) {
+        const dbRound = await storage.getRoundById(currentRoundId.toString());
+        if (dbRound?.settledAt) {
+          roundSettledAt = dbRound.settledAt.getTime();
+          lastSettledRoundId = currentRoundId;
+        }
+      }
+
+      // Calculate time remaining if we have settlement time
+      if (roundSettledAt !== null) {
+        const timeSinceSettlement = Date.now() - roundSettledAt;
+        timeUntilNextRound = Math.max(0, NEXT_ROUND_DELAY_MS - timeSinceSettlement);
+      }
+    }
+
     return {
       currentSeasonId,
       currentRoundId,
@@ -115,6 +135,7 @@ export async function getGameState(): Promise<GameState> {
       round,
       roundSettled,
       timeUntilRoundEnd,
+      timeUntilNextRound,
       shouldRequestVRF,
       shouldSettleRound,
     };
@@ -315,6 +336,10 @@ export async function finalizeRoundRevenue(roundId: bigint): Promise<{
  * Automated monitoring loop (run in background)
  */
 let monitoringInterval: NodeJS.Timeout | null = null;
+let lastSettledRoundId: bigint | null = null;
+let roundSettledAt: number | null = null;
+
+const NEXT_ROUND_DELAY_MS = 10 * 60 * 1000; // 10 minutes
 
 export function startMonitoring() {
   if (monitoringInterval) {
@@ -358,6 +383,50 @@ export function startMonitoring() {
       if (state.shouldSettleRound && state.currentRoundId > 0n) {
         log('VRF fulfilled. Auto-settling round...', 'warn');
         await settleRound(state.currentRoundId);
+
+        // Record when this round was settled
+        lastSettledRoundId = state.currentRoundId;
+        roundSettledAt = Date.now();
+      }
+
+      // Auto-start next round 10 minutes after previous round settled
+      if (
+        state.roundSettled &&
+        lastSettledRoundId === state.currentRoundId &&
+        roundSettledAt !== null
+      ) {
+        const timeSinceSettlement = Date.now() - roundSettledAt;
+
+        if (timeSinceSettlement >= NEXT_ROUND_DELAY_MS) {
+          // Check if season is still active and hasn't reached max rounds
+          if (state.season?.active && !state.season?.completed) {
+            log(`10 minutes elapsed since round ${state.currentRoundId} settled. Starting next round...`, 'warn');
+
+            const result = await startRound();
+
+            if (result.success) {
+              // Reset settlement tracking
+              lastSettledRoundId = null;
+              roundSettledAt = null;
+              log('✅ Next round started automatically');
+
+              // Seed the new round pools
+              const newRoundId = state.currentRoundId + 1n;
+              log(`Seeding pools for round ${newRoundId}...`);
+              await seedRoundPools(newRoundId);
+            } else {
+              log(`Failed to auto-start next round: ${result.error}`, 'error');
+            }
+          } else {
+            log('Season completed or inactive. Not starting new round.', 'warn');
+            // Reset tracking so we don't keep trying
+            lastSettledRoundId = null;
+            roundSettledAt = null;
+          }
+        } else {
+          const remainingTime = Math.ceil((NEXT_ROUND_DELAY_MS - timeSinceSettlement) / 1000 / 60);
+          log(`⏳ Next round starts in ${remainingTime} minutes`);
+        }
       }
     } catch (error: any) {
       log(`Monitoring error: ${error.message}`, 'error');

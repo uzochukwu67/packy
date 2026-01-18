@@ -154,7 +154,7 @@ export async function syncVRFFulfilled(requestId: bigint, roundId: bigint) {
 }
 
 /**
- * Mark round as settled in database
+ * Mark round as settled in database and update bet statuses
  */
 export async function syncRoundSettled(roundId: bigint) {
   try {
@@ -167,9 +167,63 @@ export async function syncRoundSettled(roundId: bigint) {
     });
 
     log(`✅ Round ${roundId} marked as settled in database`);
+
+    // Update all bet statuses for this round
+    await updateBetStatusesForRound(roundId);
   } catch (error: any) {
     log(`Failed to mark round ${roundId} as settled: ${error.message}`, 'error');
     throw error;
+  }
+}
+
+/**
+ * Update bet statuses for a settled round
+ */
+async function updateBetStatusesForRound(roundId: bigint) {
+  try {
+    log(`Updating bet statuses for round ${roundId}...`);
+
+    // Get all bets for this round from database
+    const bets = await storage.getBetsByRound(roundId.toString());
+
+    if (bets.length === 0) {
+      log(`No bets found for round ${roundId}`);
+      return;
+    }
+
+    log(`Found ${bets.length} bets to check for round ${roundId}`);
+
+    // Check each bet's outcome from blockchain
+    for (const bet of bets) {
+      try {
+        // Skip if already claimed or lost
+        if (bet.status === 'claimed' || bet.status === 'lost' || bet.status === 'won') {
+          continue;
+        }
+
+        // Call previewBetPayout to check if bet won
+        const payoutData = await publicClient.readContract({
+          address: CONTRACTS.bettingPool,
+          abi: BettingPoolABI as any,
+          functionName: 'previewBetPayout',
+          args: [BigInt(bet.betId)],
+        }) as any;
+
+        const isWon = payoutData[0]; // First return value is bool indicating if bet won
+        const newStatus = isWon ? 'won' : 'lost';
+
+        // Update bet status in database
+        await storage.updateBetStatus(bet.betId, newStatus, new Date());
+
+        log(`Updated bet ${bet.betId}: ${newStatus}`);
+      } catch (betError: any) {
+        log(`Failed to update bet ${bet.betId}: ${betError.message}`, 'error');
+      }
+    }
+
+    log(`✅ Finished updating bet statuses for round ${roundId}`);
+  } catch (error: any) {
+    log(`Failed to update bet statuses for round ${roundId}: ${error.message}`, 'error');
   }
 }
 
@@ -188,6 +242,13 @@ async function syncBetPlaced(
 ) {
   try {
     log(`Syncing bet ${betId} to database...`);
+
+    // Check if bet already exists to prevent duplicates
+    const existingBet = await storage.getBetByBetId(betId.toString());
+    if (existingBet) {
+      log(`Bet ${betId} already exists in database, skipping sync`, 'warn');
+      return;
+    }
 
     // Calculate potential winnings
     const totalStake = amount + bonus;
@@ -209,7 +270,12 @@ async function syncBetPlaced(
 
     log(`✅ Bet ${betId} synced to database`);
   } catch (error: any) {
-    log(`Failed to sync bet ${betId}: ${error.message}`, 'error');
+    // Ignore duplicate key errors since they're harmless
+    if (error.message && error.message.includes('duplicate key')) {
+      log(`Bet ${betId} already exists (duplicate event), skipping`, 'warn');
+    } else {
+      log(`Failed to sync bet ${betId}: ${error.message}`, 'error');
+    }
   }
 }
 

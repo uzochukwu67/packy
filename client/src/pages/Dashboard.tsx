@@ -1,13 +1,80 @@
 import { MatchCard } from "@/components/ui/MatchCard";
-import { Loader2, AlertCircle, RefreshCw, Trophy, Target } from "lucide-react";
+import { Loader2, AlertCircle, RefreshCw, Trophy, Target, Clock } from "lucide-react";
 import { useDashboardData } from "@/hooks/contracts/useGameEngine";
+import { useGameState } from "@/hooks/useGameState";
 import type { Match } from "@/contracts/types";
 import { useChainId } from "wagmi";
+import { useEffect, useState } from "react";
 
 export default function Dashboard() {
   // Fetch real-time blockchain data
   const chainId = useChainId()
-  const { seasonId, roundId, season, matches, isSettled, isLoading, isError, refetch } = useDashboardData();
+  const { seasonId, roundId, season, round, matches, isSettled, isLoading, isError, refetch } = useDashboardData();
+  const { data: gameState } = useGameState();
+
+  // Local state for countdown timers
+  const [nextRoundCountdown, setNextRoundCountdown] = useState<string>('');
+  const [bettingCountdown, setBettingCountdown] = useState<string>('');
+  const [isBettingActive, setIsBettingActive] = useState<boolean>(true);
+
+  // Calculate betting period status based on round start time
+  useEffect(() => {
+    if (!round?.startTime) {
+      setBettingCountdown('');
+      setIsBettingActive(true);
+      return;
+    }
+
+    const ROUND_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+    const roundStartTime = Number(round.startTime) * 1000; // Convert to milliseconds
+    const roundEndTime = roundStartTime + ROUND_DURATION_MS;
+
+    const updateBettingStatus = () => {
+      const now = Date.now();
+      const timeRemaining = roundEndTime - now;
+
+      if (timeRemaining > 0) {
+        setIsBettingActive(true);
+        const totalSeconds = Math.floor(timeRemaining / 1000);
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        setBettingCountdown(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+      } else {
+        setIsBettingActive(false);
+        setBettingCountdown('Betting Closed');
+      }
+    };
+
+    updateBettingStatus();
+    const interval = setInterval(updateBettingStatus, 1000);
+    return () => clearInterval(interval);
+  }, [round?.startTime]);
+
+  // Update next round countdown
+  useEffect(() => {
+    console.log(gameState);
+    if (!gameState?.timeUntilNextRound) {
+      setNextRoundCountdown('');
+      return;
+    }
+
+    const updateCountdown = () => {
+      const ms = gameState.timeUntilNextRound || 0;
+      const totalSeconds = Math.floor(ms / 1000);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+
+      if (totalSeconds > 0) {
+        setNextRoundCountdown(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+      } else {
+        setNextRoundCountdown('Starting soon...');
+      }
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
+  }, [gameState?.timeUntilNextRound]);
 
   // Loading state
   if (isLoading) {
@@ -94,10 +161,23 @@ export default function Dashboard() {
                   <Target className="w-4 h-4" />
                   SETTLED
                 </span>
+              ) : isBettingActive ? (
+                <div className="flex items-center gap-2">
+                  <span className="bg-blue-100 text-blue-700 text-sm font-bold px-4 py-2 rounded-full border border-blue-200 flex items-center gap-1.5">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+                    LIVE
+                  </span>
+                  {bettingCountdown && (
+                    <span className="bg-orange-100 text-orange-700 text-sm font-bold px-4 py-2 rounded-full border border-orange-200 flex items-center gap-1.5 font-mono">
+                      <Clock className="w-4 h-4" />
+                      {bettingCountdown}
+                    </span>
+                  )}
+                </div>
               ) : (
-                <span className="bg-blue-100 text-blue-700 text-sm font-bold px-4 py-2 rounded-full border border-blue-200 flex items-center gap-1.5">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-                  LIVE
+                <span className="bg-red-100 text-red-700 text-sm font-bold px-4 py-2 rounded-full border border-red-200 flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4" />
+                  BETTING CLOSED
                 </span>
               )}
             </div>
@@ -128,12 +208,44 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Round Status Banner */}
+      {/* Round Status Banners */}
       {isSettled && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
           <p className="text-sm text-yellow-800">
             <strong>Round Settled:</strong> This round has been settled. Winning bets can be claimed in the "My Bets" section.
           </p>
+        </div>
+      )}
+
+      {/* Betting Closed Banner (when time elapsed but not yet settled) */}
+      {!isSettled && !isBettingActive && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+          <p className="text-sm text-red-800">
+            <strong>Betting Period Ended:</strong> The 15-minute betting window has closed. Waiting for match results to be generated...
+          </p>
+        </div>
+      )}
+
+      {/* Next Round Countdown Banner */}
+      {isSettled && nextRoundCountdown && gameState?.timeUntilNextRound !== undefined && (
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="bg-blue-500 rounded-full p-3">
+                <Clock className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">Next Round Starting In</h3>
+                <p className="text-sm text-gray-600">The next round will begin automatically</p>
+              </div>
+            </div>
+            <div className="bg-white rounded-xl px-6 py-3 border border-blue-300 shadow-sm">
+              <div className="text-4xl font-bold font-mono text-blue-600">
+                {nextRoundCountdown}
+              </div>
+              <div className="text-xs text-gray-500 text-center mt-1">minutes remaining</div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -146,7 +258,8 @@ export default function Dashboard() {
               roundId={roundId}
               matchIndex={index}
               match={match}
-              startTime="Live" // TODO: Calculate from Round.startTime + ROUND_DURATION
+              startTime={bettingCountdown || "Live"}
+              bettingDisabled={!isBettingActive || (isSettled as boolean)}
             />
           ))
         ) : (

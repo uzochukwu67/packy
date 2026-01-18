@@ -91,68 +91,18 @@ export function BetSlip() {
 
   // Save bet to database and show success notification
   useEffect(() => {
+    // Only run once when bet is successfully placed (hash changes)
+    if (!isSuccess || !hash) return;
+
+    let hasRun = false;
+
     const saveBetToDatabase = async () => {
-      if (!isSuccess || !hash || !publicClient || !address || !seasonId || !roundId) return;
+      if (hasRun || !publicClient || !address || !seasonId || !roundId) return;
+      hasRun = true;
 
       try {
-        // Get transaction receipt to extract betId from event logs
-        const receipt = await publicClient.getTransactionReceipt({ hash });
-
-        // Find BetPlaced event
-        const betPlacedLog = receipt.logs.find(log => {
-          try {
-            const decoded = decodeEventLog({
-              abi: BettingPoolABI,
-              data: log.data,
-              topics: log.topics,
-            });
-            return decoded.eventName === 'BetPlaced';
-          } catch {
-            return false;
-          }
-        });
-
-        if (!betPlacedLog) {
-          console.error('BetPlaced event not found in transaction logs');
-          return;
-        }
-
-        // Decode the event to get betId
-        const decodedEvent = decodeEventLog({
-          abi: BettingPoolABI,
-          data: betPlacedLog.data,
-          topics: betPlacedLog.topics,
-        });
-
-        const betId = (decodedEvent.args as any).betId.toString();
-
-        // Prepare bet data for API
-        const betData = {
-          betId,
-          bettor: address,
-          seasonId: seasonId.toString(),
-          roundId: roundId.toString(),
-          amount: parseToken(stake.toString()).toString(),
-          matchIndices,
-          outcomes,
-          parlayMultiplier: parlayInfo ? parlayInfo[0].toString() : '1000000000000000000', // 1.0 in 18 decimals
-          potentialWinnings: parseToken(finalPotentialReturn.toString()).toString(),
-          txHash: hash,
-        };
-
-        // Save to database
-        const response = await fetch('/api/bets', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(betData),
-        });
-
-        if (!response.ok) {
-          console.error('Failed to save bet to database:', await response.text());
-        }
-
+        // The backend event listener will handle saving to database
+        // We just need to show success notification and clear slip
         toast({
           title: "Bet Placed Successfully! 🎉",
           description: `Staked ${stake} LEAGUE tokens. Check "My Bets" to track your wager.`,
@@ -160,19 +110,12 @@ export function BetSlip() {
         });
         clearSlip();
       } catch (err) {
-        console.error('Error saving bet to database:', err);
-        // Still show success toast - bet was placed on blockchain
-        toast({
-          title: "Bet Placed Successfully! 🎉",
-          description: `Staked ${stake} LEAGUE tokens. Check "My Bets" to track your wager.`,
-          className: "bg-green-50 border-green-200 text-green-900",
-        });
-        clearSlip();
+        console.error('Error handling bet success:', err);
       }
     };
 
     saveBetToDatabase();
-  }, [isSuccess, hash, publicClient, address, seasonId, roundId, matchIndices, outcomes, parlayInfo, stake, finalPotentialReturn, toast, clearSlip]);
+  }, [isSuccess, hash]); // Only depend on isSuccess and hash
 
   // Show error notification
   useEffect(() => {

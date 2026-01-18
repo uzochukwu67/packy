@@ -11,9 +11,10 @@ interface MatchCardProps {
   matchIndex: number;
   match: Match;
   startTime: string;
+  bettingDisabled?: boolean;
 }
 
-export function MatchCard({ roundId, matchIndex, match, startTime }: MatchCardProps) {
+export function MatchCard({ roundId, matchIndex, match, startTime, bettingDisabled = false }: MatchCardProps) {
   const { addBet, bets } = useBetSlip();
 
   // Fetch real-time odds from blockchain
@@ -83,13 +84,13 @@ export function MatchCard({ roundId, matchIndex, match, startTime }: MatchCardPr
         <div className="md:col-span-7 grid grid-cols-3 gap-3">
           <button
             onClick={() => handleSelect("Home", homeOdds, 1)}
-            disabled={oddsLoading || match.settled}
+            disabled={oddsLoading || match.settled || bettingDisabled}
             className={cn(
               "flex flex-col items-center justify-center py-3 px-2 rounded-xl border transition-all duration-200",
               isSelected("Home")
                 ? "bg-primary text-white border-primary shadow-lg shadow-primary/20 scale-[1.02]"
                 : "bg-gray-50 border-gray-200 text-gray-700 hover:border-primary/50 hover:bg-white",
-              (oddsLoading || match.settled) && "opacity-50 cursor-not-allowed"
+              (oddsLoading || match.settled || bettingDisabled) && "opacity-50 cursor-not-allowed"
             )}
           >
             <span className={cn("text-xs mb-1", isSelected("Home") ? "text-white/80" : "text-gray-400")}>1</span>
@@ -102,13 +103,13 @@ export function MatchCard({ roundId, matchIndex, match, startTime }: MatchCardPr
 
           <button
             onClick={() => handleSelect("Draw", drawOdds, 3)}
-            disabled={oddsLoading || match.settled}
+            disabled={oddsLoading || match.settled || bettingDisabled}
             className={cn(
               "flex flex-col items-center justify-center py-3 px-2 rounded-xl border transition-all duration-200",
               isSelected("Draw")
                 ? "bg-primary text-white border-primary shadow-lg shadow-primary/20 scale-[1.02]"
                 : "bg-gray-50 border-gray-200 text-gray-700 hover:border-primary/50 hover:bg-white",
-              (oddsLoading || match.settled) && "opacity-50 cursor-not-allowed"
+              (oddsLoading || match.settled || bettingDisabled) && "opacity-50 cursor-not-allowed"
             )}
           >
             <span className={cn("text-xs mb-1", isSelected("Draw") ? "text-white/80" : "text-gray-400")}>X</span>
@@ -121,13 +122,13 @@ export function MatchCard({ roundId, matchIndex, match, startTime }: MatchCardPr
 
           <button
             onClick={() => handleSelect("Away", awayOdds, 2)}
-            disabled={oddsLoading || match.settled}
+            disabled={oddsLoading || match.settled || bettingDisabled}
             className={cn(
               "flex flex-col items-center justify-center py-3 px-2 rounded-xl border transition-all duration-200",
               isSelected("Away")
                 ? "bg-primary text-white border-primary shadow-lg shadow-primary/20 scale-[1.02]"
                 : "bg-gray-50 border-gray-200 text-gray-700 hover:border-primary/50 hover:bg-white",
-              (oddsLoading || match.settled) && "opacity-50 cursor-not-allowed"
+              (oddsLoading || match.settled || bettingDisabled) && "opacity-50 cursor-not-allowed"
             )}
           >
             <span className={cn("text-xs mb-1", isSelected("Away") ? "text-white/80" : "text-gray-400")}>2</span>

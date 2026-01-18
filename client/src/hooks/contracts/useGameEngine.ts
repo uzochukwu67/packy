@@ -185,29 +185,33 @@ export function useDashboardData() {
   const { data: roundId } = useCurrentRound();
   const { data: matches, ...matchesQuery } = useRoundMatches(roundId);
   const { data: season, ...seasonQuery } = useSeason(seasonId);
+  const { data: round, ...roundQuery } = useRound(roundId);
   const { data: isSettled } = useIsRoundSettled(roundId);
 
   console.log({
     seasonId,
     roundId,
     season: season as Season | undefined,
+    round: round as Round | undefined,
     matches: matches as readonly Match[] | undefined,
     isSettled,
-    isLoading: matchesQuery.isLoading || seasonQuery.isLoading,
-    isError: matchesQuery.isError || seasonQuery.isError,
+    isLoading: matchesQuery.isLoading || seasonQuery.isLoading || roundQuery.isLoading,
+    isError: matchesQuery.isError || seasonQuery.isError || roundQuery.isError,
   });
 
   return {
     seasonId,
     roundId,
     season: season as Season | undefined,
+    round: round as Round | undefined,
     matches: matches as readonly Match[] | undefined,
     isSettled,
-    isLoading: matchesQuery.isLoading || seasonQuery.isLoading,
-    isError: matchesQuery.isError || seasonQuery.isError,
+    isLoading: matchesQuery.isLoading || seasonQuery.isLoading || roundQuery.isLoading,
+    isError: matchesQuery.isError || seasonQuery.isError || roundQuery.isError,
     refetch: () => {
       matchesQuery.refetch();
       seasonQuery.refetch();
+      roundQuery.refetch();
     },
   };
 }
