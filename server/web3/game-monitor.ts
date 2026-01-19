@@ -339,7 +339,7 @@ let monitoringInterval: NodeJS.Timeout | null = null;
 let lastSettledRoundId: bigint | null = null;
 let roundSettledAt: number | null = null;
 
-const NEXT_ROUND_DELAY_MS = 10 * 60 * 1000; // 10 minutes
+const NEXT_ROUND_DELAY_MS = 1000 * 60 * 1000; // 10 minutes
 
 export function startMonitoring() {
   if (monitoringInterval) {

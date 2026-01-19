@@ -18,7 +18,7 @@ export function Sidebar() {
   const [showSuccess, setShowSuccess] = useState(false);
 
   const navItems = [
-    { label: "Betting Dashboard", icon: LayoutDashboard, href: "/" },
+    { label: "Betting Dashboard", icon: LayoutDashboard, href: "/dashboard" },
     { label: "Liquidity Pool", icon: Coins, href: "/liquidity" },
     { label: "My Bets", icon: History, href: "/my-bets" },
     { label: "Round History", icon: Clock, href: "/history" },
@@ -49,9 +49,9 @@ export function Sidebar() {
       <div className="p-6">
         <div className="flex items-center gap-2 mb-8">
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white font-bold font-display text-xl">
-            V
+            P
           </div>
-          <span className="font-display font-bold text-2xl text-gray-900 tracking-tight">Virtualz</span>
+          <span className="font-display font-bold text-2xl text-gray-900 tracking-tight">Phantasma</span>
         </div>
 
         <nav className="space-y-1">

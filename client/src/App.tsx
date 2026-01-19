@@ -5,6 +5,7 @@ import { config } from "./lib/wagmi";
 import { Toaster } from "@/components/ui/toaster";
 import { BetSlipProvider } from "@/context/BetSlipContext";
 
+import Home from "@/pages/Home";
 import Dashboard from "@/pages/Dashboard";
 import Liquidity from "@/pages/Liquidity";
 import MyBets from "@/pages/MyBets";
@@ -19,17 +20,45 @@ const queryClient = new QueryClient();
 
 function Router() {
   return (
-    <MainLayout>
-      <Switch>
-        <Route path="/" component={Dashboard} />
-        <Route path="/liquidity" component={Liquidity} />
-        <Route path="/my-bets" component={MyBets} />
-        <Route path="/season" component={Season} />
-        <Route path="/history" component={History} />
-        <Route path="/rounds/:roundId" component={RoundResults} />
-        <Route component={NotFound} />
-      </Switch>
-    </MainLayout>
+    <Switch>
+      {/* Landing page without MainLayout */}
+      <Route path="/" component={Home} />
+
+      {/* App pages with MainLayout */}
+      <Route path="/dashboard">
+        <MainLayout>
+          <Dashboard />
+        </MainLayout>
+      </Route>
+      <Route path="/liquidity">
+        <MainLayout>
+          <Liquidity />
+        </MainLayout>
+      </Route>
+      <Route path="/my-bets">
+        <MainLayout>
+          <MyBets />
+        </MainLayout>
+      </Route>
+      <Route path="/season">
+        <MainLayout>
+          <Season />
+        </MainLayout>
+      </Route>
+      <Route path="/history">
+        <MainLayout>
+          <History />
+        </MainLayout>
+      </Route>
+      <Route path="/rounds/:roundId">
+        <MainLayout>
+          <RoundResults />
+        </MainLayout>
+      </Route>
+
+      {/* 404 */}
+      <Route component={NotFound} />
+    </Switch>
   );
 }
 

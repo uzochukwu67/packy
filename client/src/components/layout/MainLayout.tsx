@@ -12,7 +12,7 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
 
   const navItems = [
-    { label: "Betting Dashboard", icon: LayoutDashboard, href: "/" },
+    { label: "Betting Dashboard", icon: LayoutDashboard, href: "/dashboard" },
     { label: "Liquidity Pool", icon: Coins, href: "/liquidity" },
     { label: "My Bets", icon: History, href: "/my-bets" },
     { label: "Season Predictor", icon: Trophy, href: "/season" },
@@ -38,8 +38,8 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
           <SheetContent side="left" className="w-[80%] p-0">
              <div className="p-6">
                 <div className="flex items-center gap-2 mb-8">
-                  <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white font-bold font-display text-xl">V</div>
-                  <span className="font-display font-bold text-2xl text-gray-900">Virtualz</span>
+                  <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white font-bold font-display text-xl">P</div>
+                  <span className="font-display font-bold text-2xl text-gray-900">Phantasma</span>
                 </div>
                 <nav className="space-y-1">
                   {navItems.map((item) => {
