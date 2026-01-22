@@ -1,14 +1,17 @@
-import { Coins, TrendingUp, ArrowUpRight, ArrowDownLeft, Lock, Loader2, CheckCircle2, AlertCircle, Percent } from "lucide-react";
+import { Coins, TrendingUp, ArrowUpRight, ArrowDownLeft, Lock, Loader2, CheckCircle2, AlertCircle, Percent, DollarSign, Activity, ShieldAlert } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useAccount } from "wagmi";
-import { 
-  useLiquidityPoolStats, 
-  useUserLPPosition, 
-  useAddLiquidity, 
+import {
+  useLiquidityPoolStats,
+  useUserLPPosition,
+  useAddLiquidity,
   useRemoveLiquidity,
   usePreviewDeposit,
-  usePreviewWithdrawal
+  usePreviewWithdrawal,
+  useLPProfitLoss,
+  useMaxWithdrawableAmount,
+  usePartialWithdrawal
 } from "@/hooks/contracts/useLiquidityPool";
 import { useLeagueBalance, useLeagueAllowanceForLP, useApproveLeagueForLP } from "@/hooks/contracts/useLeagueToken";
 import { DEPLOYED_ADDRESSES } from "@/contracts/addresses";
@@ -32,20 +35,25 @@ export default function Liquidity() {
     isLoading: statsLoading 
   } = useLiquidityPoolStats();
   
-  const { 
-    amount: userLPAmount, 
+  const {
+    amount: userLPAmount,
     shares: userShares,
     percentage: userPercentage,
-    isLoading: positionLoading 
+    isLoading: positionLoading
   } = useUserLPPosition(address);
-  
+
+  // V2.5 NEW: Profit/Loss tracking
+  const { data: profitLoss } = useLPProfitLoss(address);
+  const { data: maxWithdrawable } = useMaxWithdrawableAmount(address);
+
   const { balance: userBalance, formattedBalance } = useLeagueBalance(address);
   const { data: allowance, refetch: refetchAllowance } = useLeagueAllowanceForLP(address);
-  
+
   // Preview calculations
   const amountBigInt = amount ? parseToken(amount) : 0n;
   const { data: previewShares } = usePreviewDeposit(activeTab === 'deposit' ? amountBigInt : undefined);
-  const { data: previewAmount } = usePreviewWithdrawal(activeTab === 'withdraw' && userShares ? userShares : undefined);
+  const sharesToWithdraw = activeTab === 'withdraw' && amount ? parseToken(amount) : undefined;
+  const { data: previewAmount } = usePreviewWithdrawal(sharesToWithdraw);
 
   // Token approval
   const { approve, isConfirming: isApproving, isSuccess: approveSuccess, isPending: approvePending } = useApproveLeagueForLP();
@@ -53,32 +61,46 @@ export default function Liquidity() {
   // Liquidity operations
   const { addLiquidity, isConfirming: isDepositing, isSuccess: depositSuccess } = useAddLiquidity();
   const { removeLiquidity, isConfirming: isWithdrawing, isSuccess: withdrawSuccess } = useRemoveLiquidity();
+  const { partialWithdrawal, isConfirming: isPartialWithdrawing, isSuccess: partialWithdrawSuccess } = usePartialWithdrawal();
 
   // Calculate APY (simple estimate based on utilization)
   const estimatedAPY = utilizationRate ? (Number(utilizationRate) / 100) * 0.05 : 0; // 5% base * utilization
 
+  // Extract P/L data (V2.5)
+  const netDeposit = profitLoss ? (profitLoss as [bigint, bigint, bigint, bigint])[0] : 0n;
+  const currentValue = profitLoss ? (profitLoss as [bigint, bigint, bigint, bigint])[1] : 0n;
+  const unrealizedPL = profitLoss ? (profitLoss as [bigint, bigint, bigint, bigint])[2] : 0n;
+  const realizedPL = profitLoss ? (profitLoss as [bigint, bigint, bigint, bigint])[3] : 0n;
+
+  const maxWithdrawableAmount = maxWithdrawable ? (maxWithdrawable as [bigint, bigint])[0] : 0n;
+
+  // Calculate total P/L percentage
+  const totalPL = unrealizedPL + realizedPL;
+  const plPercentage = netDeposit > 0n ? (Number(totalPL) / Number(netDeposit)) * 100 : 0;
+
   // Real Stats
   const stats = [
-    { 
-      label: "Total Liquidity", 
+    {
+      label: "Total Liquidity",
       value: statsLoading ? "..." : `${formatToken(totalLiquidity || 0n)} LEAGUE`,
       subValue: `Available: ${formatToken(availableLiquidity || 0n)}`,
-      change: `${Number(utilizationRate || 0n) / 100}% Utilized`, 
-      icon: Lock 
+      change: `${Number(utilizationRate || 0n) / 100}% Utilized`,
+      icon: Lock
     },
-    { 
-      label: "Est. APY", 
-      value: statsLoading ? "..." : `${estimatedAPY.toFixed(2)}%`,
-      subValue: "Based on pool activity",
-      change: "+Variable", 
-      icon: TrendingUp 
-    },
-    { 
-      label: "My Share", 
-      value: positionLoading ? "..." : `${formatToken(userLPAmount || 0n)} LEAGUE`,
+    {
+      label: "My Position",
+      value: positionLoading ? "..." : `${formatToken(currentValue || userLPAmount || 0n)} LEAGUE`,
       subValue: userPercentage ? `${(Number(userPercentage) / 100).toFixed(2)}% of pool` : "0% of pool",
-      change: userShares ? `${formatToken(userShares)} shares` : "No position", 
-      icon: Coins 
+      change: userShares ? `${formatToken(userShares)} shares` : "No position",
+      icon: Coins
+    },
+    {
+      label: "Profit/Loss",
+      value: positionLoading ? "..." : `${Number(totalPL) >= 0 ? '+' : ''}${formatToken(totalPL)} LEAGUE`,
+      subValue: `Unrealized: ${Number(unrealizedPL) >= 0 ? '+' : ''}${formatToken(unrealizedPL)}`,
+      change: `${plPercentage >= 0 ? '+' : ''}${plPercentage.toFixed(2)}%`,
+      icon: plPercentage >= 0 ? TrendingUp : Activity,
+      isProfit: plPercentage >= 0
     },
   ];
 
@@ -116,15 +138,15 @@ export default function Liquidity() {
 
   // Handle withdraw success
   useEffect(() => {
-    if (withdrawSuccess) {
+    if (withdrawSuccess || partialWithdrawSuccess) {
       toast({
         title: "Liquidity Withdrawn! 💰",
-        description: `Successfully withdrew liquidity.`,
+        description: `Successfully withdrew ${amount} LEAGUE tokens.`,
         className: "bg-green-50 border-green-200 text-green-900",
       });
       setAmount('');
     }
-  }, [withdrawSuccess, toast]);
+  }, [withdrawSuccess, partialWithdrawSuccess, amount, toast]);
 
   const handleApprove = async () => {
     if (!amount) return;
@@ -158,10 +180,11 @@ export default function Liquidity() {
   };
 
   const handleWithdraw = async () => {
-    if (!userShares || !isConnected) return;
+    if (!amount || !isConnected) return;
     try {
-      // Withdraw all shares for simplicity
-      await removeLiquidity(userShares);
+      const amountInWei = parseToken(amount);
+      // V2.5: Use partial withdrawal for specific amounts
+      await partialWithdrawal(amountInWei);
     } catch (err: any) {
       console.error("Withdrawal failed:", err);
       toast({
@@ -175,8 +198,9 @@ export default function Liquidity() {
   const setMaxAmount = () => {
     if (activeTab === 'deposit' && userBalance) {
       setAmount(formatToken(userBalance));
-    } else if (activeTab === 'withdraw' && userLPAmount) {
-      setAmount(formatToken(userLPAmount));
+    } else if (activeTab === 'withdraw' && maxWithdrawableAmount) {
+      // V2.5: Use max withdrawable amount (considers locked liquidity)
+      setAmount(formatToken(maxWithdrawableAmount));
     }
   };
 
@@ -198,10 +222,20 @@ export default function Liquidity() {
             className="bg-white p-6 rounded-2xl border border-border shadow-sm hover:shadow-md transition-all duration-300"
           >
             <div className="flex items-start justify-between mb-4">
-              <div className="p-3 bg-primary/10 rounded-xl text-primary">
+              <div className={cn(
+                "p-3 rounded-xl",
+                'isProfit' in stat && stat.isProfit === false
+                  ? "bg-red-50 text-red-600"
+                  : "bg-primary/10 text-primary"
+              )}>
                 <stat.icon className="w-6 h-6" />
               </div>
-              <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded-full">{stat.change}</span>
+              <span className={cn(
+                "text-xs font-bold px-2 py-1 rounded-full",
+                'isProfit' in stat && stat.isProfit === false
+                  ? "bg-red-50 text-red-600"
+                  : "bg-green-50 text-green-600"
+              )}>{stat.change}</span>
             </div>
             <p className="text-sm text-gray-500 font-medium mb-1">{stat.label}</p>
             <h3 className="text-2xl font-display font-bold text-gray-900 mb-1">{stat.value}</h3>
@@ -284,9 +318,9 @@ export default function Liquidity() {
                 </div>
                 <div className="flex justify-between text-xs text-gray-500">
                   <span>
-                    {activeTab === 'deposit' 
+                    {activeTab === 'deposit'
                       ? `Balance: ${formattedBalance} LEAGUE`
-                      : `Your Share: ${formatToken(userLPAmount || 0n)} LEAGUE`
+                      : `Max Withdrawable: ${formatToken(maxWithdrawableAmount)} LEAGUE`
                     }
                   </span>
                   {activeTab === 'deposit' && amount && previewShares && (
@@ -294,9 +328,10 @@ export default function Liquidity() {
                       ≈ {formatToken(previewShares)} shares
                     </span>
                   )}
-                  {activeTab === 'withdraw' && userShares && (
-                    <span className="text-primary font-semibold">
-                      {formatToken(userShares)} shares
+                  {activeTab === 'withdraw' && userLPAmount && maxWithdrawableAmount < userLPAmount && (
+                    <span className="text-orange-600 font-semibold flex items-center gap-1">
+                      <ShieldAlert className="w-3 h-3" />
+                      {formatToken(userLPAmount - maxWithdrawableAmount)} locked
                     </span>
                   )}
                 </div>
@@ -335,27 +370,28 @@ export default function Liquidity() {
                   exit={{ opacity: 0 }}
                   onClick={activeTab === 'deposit' ? handleDeposit : handleWithdraw}
                   disabled={
-                    !isConnected || 
-                    !amount || 
-                    isDepositing || 
+                    !isConnected ||
+                    !amount ||
+                    isDepositing ||
                     isWithdrawing ||
-                    (activeTab === 'withdraw' && !userShares)
+                    isPartialWithdrawing ||
+                    (activeTab === 'withdraw' && !userLPAmount)
                   }
                   className={cn(
                     "w-full py-3.5 rounded-xl font-bold text-white shadow-lg active:translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2",
-                    isDepositing || isWithdrawing
+                    isDepositing || isWithdrawing || isPartialWithdrawing
                       ? "bg-gray-400"
-                      : depositSuccess || withdrawSuccess
+                      : depositSuccess || withdrawSuccess || partialWithdrawSuccess
                       ? "bg-green-500"
                       : "bg-primary hover:bg-primary/90 shadow-primary/20"
                   )}
                 >
-                  {isDepositing || isWithdrawing ? (
+                  {isDepositing || isWithdrawing || isPartialWithdrawing ? (
                     <>
                       <Loader2 className="w-5 h-5 animate-spin" />
                       Confirming...
                     </>
-                  ) : depositSuccess || withdrawSuccess ? (
+                  ) : depositSuccess || withdrawSuccess || partialWithdrawSuccess ? (
                     <>
                       <CheckCircle2 className="w-5 h-5" />
                       Success!
@@ -363,7 +399,7 @@ export default function Liquidity() {
                   ) : (
                     <>
                       {activeTab === 'deposit' ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownLeft className="w-5 h-5" />}
-                      {activeTab === 'deposit' ? "Add Liquidity" : "Remove Liquidity"}
+                      {activeTab === 'deposit' ? "Add Liquidity" : "Withdraw Liquidity"}
                     </>
                   )}
                 </motion.button>
@@ -413,6 +449,44 @@ export default function Liquidity() {
               </motion.li>
             ))}
           </ul>
+
+          {/* V2.5 Position Stats */}
+          {isConnected && userLPAmount && userLPAmount > 0n && (
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4 mb-4">
+              <h4 className="font-bold text-blue-900 text-sm mb-3 flex items-center gap-2">
+                <DollarSign className="w-4 h-4" />
+                Your LP Performance
+              </h4>
+              <div className="space-y-2">
+                <div className="flex justify-between text-xs">
+                  <span className="text-blue-700">Net Deposited:</span>
+                  <span className="font-mono font-semibold text-blue-900">{formatToken(netDeposit)} LEAGUE</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-blue-700">Current Value:</span>
+                  <span className="font-mono font-semibold text-blue-900">{formatToken(currentValue)} LEAGUE</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-blue-700">Unrealized P/L:</span>
+                  <span className={cn(
+                    "font-mono font-semibold",
+                    Number(unrealizedPL) >= 0 ? "text-green-600" : "text-red-600"
+                  )}>
+                    {Number(unrealizedPL) >= 0 ? '+' : ''}{formatToken(unrealizedPL)} LEAGUE
+                  </span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-blue-700">Realized P/L:</span>
+                  <span className={cn(
+                    "font-mono font-semibold",
+                    Number(realizedPL) >= 0 ? "text-green-600" : "text-red-600"
+                  )}>
+                    {Number(realizedPL) >= 0 ? '+' : ''}{formatToken(realizedPL)} LEAGUE
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Pool Stats */}
           <div className="bg-white border border-border rounded-xl p-4 mb-4">

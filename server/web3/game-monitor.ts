@@ -472,7 +472,7 @@ export function startMonitoring() {
 async function initializeGame() {
   try {
     const state = await getGameState();
-
+    await seedRoundPools(1n);
     // Case 1: No season exists (fresh contract) - start season and first round
     if (state.currentSeasonId === 0n) {
       log('🚀 Fresh contract detected. Starting season and first round...', 'warn');
@@ -497,7 +497,7 @@ async function initializeGame() {
       log('✅ Round 1 started');
 
       // Seed the first round
-      await seedRoundPools(1n);
+      
       log('✅ Round 1 pools seeded');
 
       return;

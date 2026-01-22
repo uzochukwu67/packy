@@ -10,8 +10,10 @@ import { useLeagueAllowance, useApproveLeague } from "@/hooks/contracts/useLeagu
 import { parseToken, formatToken, formatOdds } from "@/contracts/types";
 import { useEffect, useState } from "react";
 import { DEPLOYED_ADDRESSES } from "@/contracts/addresses";
-import BettingPoolABI from "@/abis/bettingpool.json";
+import BettingPoolJSON from "@/abis/bettingpool.json";
 import { decodeEventLog } from "viem";
+
+const BettingPoolABI = BettingPoolJSON.abi;
 
 export function BetSlip() {
   const { bets, removeBet, clearSlip, stake, setStake, isOpen, toggleSlip } = useBetSlip();

@@ -7,7 +7,7 @@ import SeasonPredictorJSON from "./SeasonPredictorV2.json"
 export const GameEngineABI = GameEngineJSON.abi
 export const BettingPoolABI = BettingPoolJSON.abi
 export const LiquidityPoolABI = LiquidityPoolJSON.abi
-export const LeagueTokenABI = LeagueTokenJSON.abi
+export const LeagueTokenABI = LeagueTokenJSON
 export const SeasonPredictorABI = SeasonPredictorJSON.abi
 
 export type { Abi } from "viem"

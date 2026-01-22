@@ -6,7 +6,9 @@
 import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { sepolia } from 'wagmi/chains';
 import { DEPLOYED_ADDRESSES } from '@/contracts/addresses';
-import LiquidityPoolABI from '@/abis/LiquidityPool.json';
+import LiquidityPoolJSON from '@/abis/LiquidityPool.json';
+
+const LiquidityPoolABI = LiquidityPoolJSON.abi;
 
 // ============ Read Hooks ============
 

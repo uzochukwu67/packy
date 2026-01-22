@@ -6,7 +6,7 @@
 import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { sepolia } from 'wagmi/chains';
 import { DEPLOYED_ADDRESSES } from '@/contracts/addresses';
-import BettingPoolABI from '@/abis/bettingpool.json';
+import BettingPoolJSON from '@/abis/bettingpool.json';
 import type {
   MatchOdds,
   ParlayInfo,
@@ -17,6 +17,8 @@ import type {
   MatchPool
 } from '@/contracts/types';
 import { useState } from 'react';
+
+const BettingPoolABI = BettingPoolJSON.abi;
 
 // ============ Read Hooks - Odds & Pool Data ============
 
