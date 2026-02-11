@@ -4,14 +4,12 @@ import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
 import { useAccount, usePublicClient } from "wagmi";
 import { useToast } from "@/hooks/use-toast";
-import { usePlaceBet, useCurrentParlayMultiplier } from "@/hooks/contracts/useBettingPool";
-import { useCurrentRound, useCurrentSeason } from "@/hooks/contracts/useGameEngine";
+import { usePlaceBet } from "@/hooks/contracts/useBettingCore";
+import { useCurrentRound, useCurrentSeason } from "@/hooks/contracts/useGameCore";
 import { useLeagueAllowance, useApproveLeague } from "@/hooks/contracts/useLeagueToken";
 import { parseToken, formatToken, formatOdds } from "@/contracts/types";
 import { useEffect, useState } from "react";
 import { DEPLOYED_ADDRESSES } from "@/contracts/addresses";
-import BettingPoolABI from "@/abis/bettingpool.json";
-import { decodeEventLog } from "viem";
 
 export function BetSlip() {
   const { bets, removeBet, clearSlip, stake, setStake, isOpen, toggleSlip } = useBetSlip();
@@ -48,26 +46,15 @@ export function BetSlip() {
     return 3; // Draw
   });
 
-  // Get parlay multiplier
-  const { data: parlayInfo } = useCurrentParlayMultiplier(
-    roundId,
-    matchIndices,
-    bets.length
-  );
-
   // Blockchain bet placement
   const { placeBet, isConfirming, isSuccess, isPending, error, hash } = usePlaceBet();
 
   // Calculate odds and potential return
   const totalOdds = bets.reduce((acc, bet) => acc * bet.odds, 1);
-  const basePotentialReturn = stake * totalOdds;
-
-  // Apply parlay multiplier if available
-  const parlayMultiplier = parlayInfo ? formatOdds(parlayInfo[0]) : 1.0;
-  const finalPotentialReturn = basePotentialReturn * parlayMultiplier;
+  const potentialReturn = stake * totalOdds;
 
   const formattedOdds = totalOdds.toFixed(2);
-  const formattedReturn = finalPotentialReturn.toFixed(2);
+  const formattedReturn = potentialReturn.toFixed(2);
 
   // Check if approval is needed when stake changes
   useEffect(() => {
@@ -105,7 +92,7 @@ export function BetSlip() {
         // We just need to show success notification and clear slip
         toast({
           title: "Bet Placed Successfully! 🎉",
-          description: `Staked ${stake} LEAGUE tokens. Check "My Bets" to track your wager.`,
+          description: `Staked ${stake} LBT tokens. Check "My Bets" to track your wager.`,
           className: "bg-green-50 border-green-200 text-green-900",
         });
         clearSlip();
@@ -161,11 +148,12 @@ export function BetSlip() {
     }
 
     try {
-      // Convert stake to wei (18 decimals for LEAGUE token)
+      // Convert stake to wei (18 decimals for LBT token)
       const stakeInWei = parseToken(stake.toString());
 
-      // Place bet on blockchain
-      await placeBet(matchIndices, outcomes, stakeInWei);
+      // Place bet on blockchain via BettingCore (direct call)
+      // Signature: placeBet(uint256 amount, uint256[] matchIndices, uint8[] predictions)
+      await placeBet(stakeInWei, matchIndices, outcomes);
     } catch (err: any) {
       console.error("Failed to place bet:", err);
     }
@@ -249,22 +237,8 @@ export function BetSlip() {
                 <span className="font-bold font-mono">{formattedOdds}</span>
               </div>
 
-              {/* Parlay Multiplier Indicator */}
-              {bets.length > 1 && parlayInfo && (
-                <div className="bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg p-2.5">
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-xs font-bold text-purple-700 uppercase">Parlay Bonus</span>
-                    <span className="text-sm font-bold text-purple-700">{parlayMultiplier.toFixed(2)}x</span>
-                  </div>
-                  <div className="flex justify-between text-xs text-purple-600">
-                    <span>Tier {parlayInfo[1].toString()}</span>
-                    <span>{parlayInfo[2].toString()} left in tier</span>
-                  </div>
-                </div>
-              )}
-
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Stake (LEAGUE)</label>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Stake (LBT)</label>
                 <div className="relative">
                   <input
                     type="number"
@@ -275,20 +249,13 @@ export function BetSlip() {
                     disabled={isPending || isConfirming}
                     className="w-full pl-3 pr-16 py-2.5 bg-white border border-input rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary font-mono text-sm disabled:opacity-50"
                   />
-                  <span className="absolute right-3 top-2.5 text-xs font-bold text-gray-400">LEAGUE</span>
+                  <span className="absolute right-3 top-2.5 text-xs font-bold text-gray-400">LBT</span>
                 </div>
               </div>
 
               <div className="flex justify-between items-center p-3 bg-green-50 rounded-xl border border-green-100">
                 <span className="text-xs font-bold text-green-700 uppercase">Potential Return</span>
-                <div className="text-right">
-                  <div className="font-bold text-green-700 font-mono">{formattedReturn} LEAGUE</div>
-                  {bets.length > 1 && parlayMultiplier > 1 && (
-                    <div className="text-xs text-green-600">
-                      (Base: {basePotentialReturn.toFixed(2)} × {parlayMultiplier.toFixed(2)}x)
-                    </div>
-                  )}
-                </div>
+                <div className="font-bold text-green-700 font-mono">{formattedReturn} LBT</div>
               </div>
             </div>
 
@@ -325,7 +292,7 @@ export function BetSlip() {
                       Approved!
                     </>
                   ) : (
-                    "Approve LEAGUE"
+                    "Approve LBT"
                   )}
                 </button>
               ) : (

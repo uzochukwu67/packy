@@ -7,7 +7,6 @@ import { BetSlipProvider } from "@/context/BetSlipContext";
 
 import Home from "@/pages/Home";
 import Dashboard from "@/pages/Dashboard";
-import Liquidity from "@/pages/Liquidity";
 import MyBets from "@/pages/MyBets";
 import Season from "@/pages/Season";
 import History from "@/pages/History";
@@ -29,11 +28,6 @@ function Router() {
       <Route path="/dashboard">
         <MainLayout>
           <Dashboard />
-        </MainLayout>
-      </Route>
-      <Route path="/liquidity">
-        <MainLayout>
-          <Liquidity />
         </MainLayout>
       </Route>
       <Route path="/my-bets">

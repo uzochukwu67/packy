@@ -1,10 +1,10 @@
 /**
  * Blockchain Event Synchronization
- * Listens to GameEngine events and syncs data to database
+ * Listens to gameCore events and syncs data to database
  */
 
 import { publicClient, CONTRACTS, log } from './config';
-import { GameEngineABI, BettingPoolABI } from './abis/index';
+import { GameCoreABI, BettingCoreABI } from './abis/index';
 import { storage } from '../storage';
 
 // Team names (matching contract initialization)
@@ -68,8 +68,8 @@ export async function syncRoundStart(roundId: bigint, seasonId: bigint, startTim
 
     // Fetch match data from blockchain
     const matches = await publicClient.readContract({
-      address: CONTRACTS.gameEngine,
-      abi: GameEngineABI as any,
+      address: CONTRACTS.gameCore,
+      abi: GameCoreABI as any,
       functionName: 'getRoundMatches',
       args: [roundId],
     }) as any[];
@@ -128,8 +128,8 @@ export async function syncVRFFulfilled(requestId: bigint, roundId: bigint) {
 
     // Fetch updated matches with results from blockchain
     const matches = await publicClient.readContract({
-      address: CONTRACTS.gameEngine,
-      abi: GameEngineABI as any,
+      address: CONTRACTS.gameCore,
+      abi: GameCoreABI as any,
       functionName: 'getRoundMatches',
       args: [roundId],
     }) as any[];
@@ -203,8 +203,8 @@ async function updateBetStatusesForRound(roundId: bigint) {
 
         // Call previewBetPayout to check if bet won
         const payoutData = await publicClient.readContract({
-          address: CONTRACTS.bettingPool,
-          abi: BettingPoolABI as any,
+          address: CONTRACTS.bettingCore,
+          abi: BettingCoreABI as any,
           functionName: 'previewBetPayout',
           args: [BigInt(bet.betId)],
         }) as any;
@@ -234,17 +234,15 @@ async function updateBetStatusesForRound(roundId: bigint) {
 }
 
 /**
- * Sync bet placement to database
+ * Sync bet placement to database and process referral rewards
  */
 async function syncBetPlaced(
   betId: bigint,
   bettor: string,
   roundId: bigint,
   amount: bigint,
-  bonus: bigint,
   parlayMultiplier: bigint,
-  matchIndices: readonly bigint[],
-  outcomes: readonly number[]
+  legCount: number
 ) {
   try {
     log(`Syncing bet ${betId} to database...`);
@@ -256,8 +254,18 @@ async function syncBetPlaced(
       return;
     }
 
+    // Fetch full bet details from contract to get matchIndices and outcomes
+    const betDetails = await publicClient.readContract({
+      address: CONTRACTS.bettingCore,
+      abi: BettingCoreABI as any,
+      functionName: 'getBet',
+      args: [betId],
+    }) as any;
+
+    const matchIndices = betDetails.matchIndices || [];
+    const outcomes = betDetails.outcomes || [];
+
     // Calculate potential winnings based on locked odds
-    // The contract calculates: basePayout = Σ(amount × lockedOdds) then finalPayout = basePayout × parlayMultiplier
     let potentialWinnings = BigInt(0);
 
     try {
@@ -270,8 +278,8 @@ async function syncBetPlaced(
 
         // Get locked odds for this match
         const oddsData = await publicClient.readContract({
-          address: CONTRACTS.bettingPool,
-          abi: BettingPoolABI as any,
+          address: CONTRACTS.bettingCore,
+          abi: BettingCoreABI as any,
           functionName: 'getMatchOdds',
           args: [roundId, matchIndex],
         }) as readonly [bigint, bigint, bigint, boolean];
@@ -303,8 +311,8 @@ async function syncBetPlaced(
       seasonId: roundId.toString(), // Will be updated with actual season ID
       roundId: roundId.toString(),
       amount: amount.toString(),
-      matchIndices: JSON.stringify(matchIndices.map(n => Number(n))),
-      outcomes: JSON.stringify(outcomes.map(n => Number(n))),
+      matchIndices: JSON.stringify(matchIndices.map((n: bigint) => Number(n))),
+      outcomes: JSON.stringify(outcomes.map((n: number) => Number(n))),
       parlayMultiplier: parlayMultiplier.toString(),
       potentialWinnings: potentialWinnings.toString(),
       status: 'pending',
@@ -313,6 +321,10 @@ async function syncBetPlaced(
 
     // Award 1 point for placing a bet
     await storage.awardBetPlacedPoints(bettor, betId.toString());
+
+    // Process referral rewards if applicable
+    const { processReferralReward } = await import('./referral-system');
+    await processReferralReward(bettor, betId.toString(), amount);
 
     log(`✅ Bet ${betId} synced to database and 1 point awarded`);
   } catch (error: any) {
@@ -356,6 +368,129 @@ async function syncBetLost(betId: bigint, bettor: string) {
 }
 
 /**
+ * Update bet status when cancelled and record refund
+ */
+async function syncBetCancelled(betId: bigint, bettor: string, refundAmount: bigint) {
+  try {
+    log(`Updating bet ${betId} as cancelled...`);
+
+    await storage.updateBetStatus(betId.toString(), 'cancelled', new Date());
+
+    log(`✅ Bet ${betId} marked as cancelled, refund: ${refundAmount.toString()}`);
+  } catch (error: any) {
+    log(`Failed to update bet ${betId} cancelled status: ${error.message}`, 'error');
+  }
+}
+
+/**
+ * Record bounty claim to database
+ */
+async function syncBountyClaim(
+  betId: bigint,
+  claimer: string,
+  bounty: bigint,
+  winner: string,
+  winnerAmount: bigint,
+  txHash: string
+) {
+  try {
+    log(`Recording bounty claim for bet ${betId}...`);
+
+    // Get bet details to record full bounty claim
+    const bet = await storage.getBetByBetId(betId.toString());
+    if (!bet) {
+      log(`Bet ${betId} not found in database`, 'warn');
+      return;
+    }
+
+    // Calculate total payout (bounty + winner amount)
+    const totalPayout = bounty + winnerAmount;
+
+    // Record bounty claim
+    await storage.recordBountyClaim({
+      betId: betId.toString(),
+      claimerAddress: claimer,
+      winnerAddress: winner,
+      betAmount: bet.amount,
+      payout: totalPayout.toString(),
+      bountyAmount: bounty.toString(),
+      winnerAmount: winnerAmount.toString(),
+      txHash,
+    });
+
+    // Update bet status to claimed (winner got their payout via bounty)
+    await storage.updateBetStatus(betId.toString(), 'claimed', new Date());
+
+    log(`✅ Bounty claim recorded: claimer=${claimer}, bounty=${bounty.toString()}, winner=${winner}, amount=${winnerAmount.toString()}`);
+  } catch (error: any) {
+    log(`Failed to record bounty claim for bet ${betId}: ${error.message}`, 'error');
+  }
+}
+
+/**
+ * Record round pool sweep to database
+ */
+async function syncRoundPoolSwept(
+  roundId: bigint,
+  remaining: bigint,
+  protocolShare: bigint,
+  seasonShare: bigint,
+  txHash: string
+) {
+  try {
+    log(`Recording round pool sweep for round ${roundId}...`);
+
+    await storage.recordRoundSweep({
+      roundId: roundId.toString(),
+      remainingAmount: remaining.toString(),
+      protocolShare: protocolShare.toString(),
+      seasonShare: seasonShare.toString(),
+      txHash,
+    });
+
+    log(`✅ Round ${roundId} sweep recorded: remaining=${remaining.toString()}, protocol=${protocolShare.toString()}, season=${seasonShare.toString()}`);
+  } catch (error: any) {
+    log(`Failed to record round sweep for round ${roundId}: ${error.message}`, 'error');
+  }
+}
+
+/**
+ * Update round when it gets seeded
+ */
+async function syncRoundSeeded(roundId: bigint) {
+  try {
+    log(`Marking round ${roundId} as seeded...`);
+
+    await storage.updateRound(roundId.toString(), {
+      seeded: true,
+      seededAt: new Date(),
+    });
+
+    log(`✅ Round ${roundId} marked as seeded`);
+  } catch (error: any) {
+    log(`Failed to mark round ${roundId} as seeded: ${error.message}`, 'error');
+  }
+}
+
+/**
+ * Update round when odds are locked
+ */
+async function syncOddsLocked(roundId: bigint) {
+  try {
+    log(`Marking round ${roundId} odds as locked...`);
+
+    await storage.updateRound(roundId.toString(), {
+      oddsLocked: true,
+      oddsLockedAt: new Date(),
+    });
+
+    log(`✅ Round ${roundId} odds locked`);
+  } catch (error: any) {
+    log(`Failed to mark round ${roundId} odds as locked: ${error.message}`, 'error');
+  }
+}
+
+/**
  * Manually sync a specific round's state from blockchain to database
  * Useful for fixing desync issues or initial sync
  */
@@ -365,23 +500,23 @@ export async function manualSyncRound(roundId: bigint) {
 
     // Get round data from blockchain
     const roundData = await publicClient.readContract({
-      address: CONTRACTS.gameEngine,
-      abi: GameEngineABI as any,
+      address: CONTRACTS.gameCore,
+      abi: GameCoreABI as any,
       functionName: 'getRound',
       args: [roundId],
     }) as any;
 
     const isSettled = await publicClient.readContract({
-      address: CONTRACTS.gameEngine,
-      abi: GameEngineABI as any,
+      address: CONTRACTS.gameCore,
+      abi: GameCoreABI as any,
       functionName: 'isRoundSettled',
       args: [roundId],
     }) as boolean;
 
     // Get match data
     const matches = await publicClient.readContract({
-      address: CONTRACTS.gameEngine,
-      abi: GameEngineABI as any,
+      address: CONTRACTS.gameCore,
+      abi: GameCoreABI as any,
       functionName: 'getRoundMatches',
       args: [roundId],
     }) as any[];
@@ -420,24 +555,20 @@ export async function manualSyncRound(roundId: bigint) {
 export function startEventListeners() {
   log('Starting blockchain event listeners...');
 
-  // ============ GameEngine Events ============
+  // ============ gameCore Events ============
 
   // Listen for RoundStarted event
   publicClient.watchContractEvent({
-    address: CONTRACTS.gameEngine,
-    abi: GameEngineABI as any,
+    address: CONTRACTS.gameCore,
+    abi: GameCoreABI as any,
     eventName: 'RoundStarted',
     onLogs: async (logs: any[]) => {
       for (const eventLog of logs) {
         const { roundId, seasonId, startTime } = eventLog.args as any;
         await syncRoundStart(roundId, seasonId, startTime);
 
-        // Auto-seed the newly started round
-        log(`Auto-seeding round ${roundId} after RoundStarted event...`);
-        // Import seedRoundPools dynamically to avoid circular dependency
-        const { seedRoundPools } = await import('./game-monitor');
-        await seedRoundPools(roundId);
-        log(`✅ Round ${roundId} auto-seeded`);
+        // Note: New protocol uses virtual seeding - no need to seed with LP funds
+        // The seedRoundPools() function is called automatically by game-monitor when round starts
       }
     },
     onError: (error: any) => {
@@ -447,8 +578,8 @@ export function startEventListeners() {
 
   // Listen for VRFFulfilled event
   publicClient.watchContractEvent({
-    address: CONTRACTS.gameEngine,
-    abi: GameEngineABI as any,
+    address: CONTRACTS.gameCore,
+    abi: GameCoreABI as any,
     eventName: 'VRFFulfilled',
     onLogs: async (logs: any[]) => {
       for (const eventLog of logs) {
@@ -461,10 +592,10 @@ export function startEventListeners() {
     },
   });
 
-  // Listen for RoundSettled event (from GameEngine)
+  // Listen for RoundSettled event (from gameCore)
   publicClient.watchContractEvent({
-    address: CONTRACTS.gameEngine,
-    abi: GameEngineABI as any,
+    address: CONTRACTS.gameCore,
+    abi: GameCoreABI as any,
     eventName: 'RoundSettled',
     onLogs: async (logs: any[]) => {
       for (const eventLog of logs) {
@@ -477,10 +608,10 @@ export function startEventListeners() {
     },
   });
 
-  // Also listen for RoundSettled from BettingPool (emitted during settleRound)
+  // Also listen for RoundSettled from bettingCore (emitted during settleRound)
   publicClient.watchContractEvent({
-    address: CONTRACTS.bettingPool,
-    abi: BettingPoolABI as any,
+    address: CONTRACTS.bettingCore,
+    abi: BettingCoreABI as any,
     eventName: 'RoundSettled',
     onLogs: async (logs: any[]) => {
       for (const eventLog of logs) {
@@ -489,16 +620,16 @@ export function startEventListeners() {
       }
     },
     onError: (error: any) => {
-      log(`BettingPool RoundSettled event error: ${error.message}`, 'error');
+      log(`bettingCore RoundSettled event error: ${error.message}`, 'error');
     },
   });
 
-  // ============ BettingPool Events ============
+  // ============ bettingCore Events ============
 
   // Listen for BetPlaced event
   publicClient.watchContractEvent({
-    address: CONTRACTS.bettingPool,
-    abi: BettingPoolABI as any,
+    address: CONTRACTS.bettingCore,
+    abi: BettingCoreABI as any,
     eventName: 'BetPlaced',
     onLogs: async (logs: any[]) => {
       for (const eventLog of logs) {
@@ -507,10 +638,8 @@ export function startEventListeners() {
           bettor,
           roundId,
           amount,
-          bonus,
           parlayMultiplier,
-          matchIndices,
-          outcomes
+          legCount
         } = eventLog.args as any;
 
         await syncBetPlaced(
@@ -518,10 +647,8 @@ export function startEventListeners() {
           bettor,
           roundId,
           amount,
-          bonus,
           parlayMultiplier,
-          matchIndices,
-          outcomes
+          legCount
         );
       }
     },
@@ -532,8 +659,8 @@ export function startEventListeners() {
 
   // Listen for WinningsClaimed event
   publicClient.watchContractEvent({
-    address: CONTRACTS.bettingPool,
-    abi: BettingPoolABI as any,
+    address: CONTRACTS.bettingCore,
+    abi: BettingCoreABI as any,
     eventName: 'WinningsClaimed',
     onLogs: async (logs: any[]) => {
       for (const eventLog of logs) {
@@ -548,13 +675,13 @@ export function startEventListeners() {
 
   // Listen for BetLost event
   publicClient.watchContractEvent({
-    address: CONTRACTS.bettingPool,
-    abi: BettingPoolABI as any,
+    address: CONTRACTS.bettingCore,
+    abi: BettingCoreABI as any,
     eventName: 'BetLost',
     onLogs: async (logs: any[]) => {
       for (const eventLog of logs) {
-        const { betId, bettor } = eventLog.args as any;
-        await syncBetLost(betId, bettor);
+        const { betId } = eventLog.args as any;
+        await syncBetLost(betId, eventLog.args.bettor);
       }
     },
     onError: (error: any) => {
@@ -562,5 +689,85 @@ export function startEventListeners() {
     },
   });
 
-  log('✅ Blockchain event listeners started (GameEngine + BettingPool)');
+  // Listen for BetCancelled event
+  publicClient.watchContractEvent({
+    address: CONTRACTS.bettingCore,
+    abi: BettingCoreABI as any,
+    eventName: 'BetCancelled',
+    onLogs: async (logs: any[]) => {
+      for (const eventLog of logs) {
+        const { betId, bettor, refundAmount } = eventLog.args as any;
+        await syncBetCancelled(betId, bettor, refundAmount);
+      }
+    },
+    onError: (error: any) => {
+      log(`BetCancelled event error: ${error.message}`, 'error');
+    },
+  });
+
+  // Listen for BountyClaim event
+  publicClient.watchContractEvent({
+    address: CONTRACTS.bettingCore,
+    abi: BettingCoreABI as any,
+    eventName: 'BountyClaim',
+    onLogs: async (logs: any[]) => {
+      for (const eventLog of logs) {
+        const { betId, claimer, bounty, winner, winnerAmount } = eventLog.args as any;
+        await syncBountyClaim(betId, claimer, bounty, winner, winnerAmount, eventLog.transactionHash);
+      }
+    },
+    onError: (error: any) => {
+      log(`BountyClaim event error: ${error.message}`, 'error');
+    },
+  });
+
+  // Listen for RoundPoolSwept event
+  publicClient.watchContractEvent({
+    address: CONTRACTS.bettingCore,
+    abi: BettingCoreABI as any,
+    eventName: 'RoundPoolSwept',
+    onLogs: async (logs: any[]) => {
+      for (const eventLog of logs) {
+        const { roundId, remaining, protocolShare, seasonShare } = eventLog.args as any;
+        await syncRoundPoolSwept(roundId, remaining, protocolShare, seasonShare, eventLog.transactionHash);
+      }
+    },
+    onError: (error: any) => {
+      log(`RoundPoolSwept event error: ${error.message}`, 'error');
+    },
+  });
+
+  // Listen for RoundSeeded event
+  publicClient.watchContractEvent({
+    address: CONTRACTS.bettingCore,
+    abi: BettingCoreABI as any,
+    eventName: 'RoundSeeded',
+    onLogs: async (logs: any[]) => {
+      for (const eventLog of logs) {
+        const { roundId } = eventLog.args as any;
+        await syncRoundSeeded(roundId);
+      }
+    },
+    onError: (error: any) => {
+      log(`RoundSeeded event error: ${error.message}`, 'error');
+    },
+  });
+
+  // Listen for OddsLocked event
+  publicClient.watchContractEvent({
+    address: CONTRACTS.bettingCore,
+    abi: BettingCoreABI as any,
+    eventName: 'OddsLocked',
+    onLogs: async (logs: any[]) => {
+      for (const eventLog of logs) {
+        const { roundId } = eventLog.args as any;
+        await syncOddsLocked(roundId);
+      }
+    },
+    onError: (error: any) => {
+      log(`OddsLocked event error: ${error.message}`, 'error');
+    },
+  });
+
+  log('✅ Blockchain event listeners started (gameCore + bettingCore with bounty/sweep tracking)');
 }

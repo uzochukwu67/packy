@@ -1,8 +1,8 @@
 import { useBetSlip } from "@/context/BetSlipContext";
 import { cn } from "@/lib/utils";
 import { Users, Loader2 } from "lucide-react";
-import { useMatchOdds } from "@/hooks/contracts/useBettingPool";
-import { useTeam } from "@/hooks/contracts/useGameEngine";
+import { useLockedOdds } from "@/hooks/contracts/useBettingCore";
+import { useTeam } from "@/hooks/contracts/useGameCore";
 import { formatOdds } from "@/contracts/types";
 import type { Match } from "@/contracts/types";
 
@@ -18,7 +18,7 @@ export function MatchCard({ roundId, matchIndex, match, startTime, bettingDisabl
   const { addBet, bets } = useBetSlip();
 
   // Fetch locked odds from blockchain (fixed at seeding time)
-  const { data: oddsData, isLoading: oddsLoading, error: oddsError } = useMatchOdds(roundId, matchIndex);
+  const { data: oddsData, isLoading: oddsLoading, error: oddsError } = useLockedOdds(roundId, matchIndex);
 
   // Fetch team names
   const { data: homeTeam } = useTeam(Number(match.homeTeamId));

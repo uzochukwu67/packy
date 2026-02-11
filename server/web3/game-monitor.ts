@@ -1,31 +1,16 @@
 /**
- * GameEngine Monitoring System
+ * gameCore Monitoring System
  * Monitors game state and provides admin controls
  */
 
 import { publicClient, walletClient, CONTRACTS, MONITORING_CONFIG, log } from './config';
-import { GameEngineABI, BettingPoolABI } from './abis/index';
+import { GameCoreABI, BettingCoreABI } from './abis/index';
 import { storage } from '../storage';
 import { startEventListeners, syncRoundStart } from './event-sync';
 
 export interface GameState {
   currentSeasonId: bigint;
   currentRoundId: bigint;
-  season: {
-    seasonId: bigint;
-    startTime: bigint;
-    currentRound: bigint;
-    active: boolean;
-    completed: boolean;
-    winningTeamId: bigint;
-  } | null;
-  round: {
-    roundId: bigint;
-    seasonId: bigint;
-    startTime: bigint;
-    vrfRequestId: bigint;
-    settled: boolean;
-  } | null;
   roundSettled: boolean;
   timeUntilRoundEnd?: number;
   timeUntilNextRound?: number;
@@ -41,98 +26,57 @@ export async function getGameState(): Promise<GameState> {
     // Read current season and round IDs
     const [currentSeasonId, currentRoundId] = await Promise.all([
       publicClient.readContract({
-        address: CONTRACTS.gameEngine,
-        abi: GameEngineABI as any,
+        address: CONTRACTS.gameCore,
+        abi: GameCoreABI as any,
         functionName: 'getCurrentSeason',
       }) as Promise<bigint>,
       publicClient.readContract({
-        address: CONTRACTS.gameEngine,
-        abi: GameEngineABI as any,
+        address: CONTRACTS.gameCore,
+        abi: GameCoreABI as any,
         functionName: 'getCurrentRound',
       }) as Promise<bigint>,
     ]);
 
-    let season = null;
-    let round = null;
     let roundSettled = false;
     let timeUntilRoundEnd = undefined;
     let timeUntilNextRound = undefined;
     let shouldRequestVRF = false;
     let shouldSettleRound = false;
 
-    // Get season details if exists
-    if (currentSeasonId > 0n) {
-      season = await publicClient.readContract({
-        address: CONTRACTS.gameEngine,
-        abi: GameEngineABI as any,
-        functionName: 'getSeason',
-        args: [currentSeasonId],
-      }) as any;
-    }
+    // Check round status if round exists
+    if (currentRoundId > BigInt(0)) {
+      // Check if round is settled from database (more reliable than blockchain state)
+      const dbRound = await storage.getRoundById(currentRoundId.toString());
 
-    // Get round details if exists
-    if (currentRoundId > 0n) {
-      [round, roundSettled] = await Promise.all([
-        publicClient.readContract({
-          address: CONTRACTS.gameEngine,
-          abi: GameEngineABI as any,
-          functionName: 'getRound',
-          args: [currentRoundId],
-        }) as Promise<any>,
-        publicClient.readContract({
-          address: CONTRACTS.gameEngine,
-          abi: GameEngineABI as any,
-          functionName: 'isRoundSettled',
-          args: [currentRoundId],
-        }) as Promise<boolean>,
-      ]);
+      if (dbRound) {
+        roundSettled = dbRound.settled;
 
-      // Calculate time until round end
-      if (round && !roundSettled) {
-        const roundStartTime = Number(round.startTime) * 1000; // Convert to ms
-        const roundEndTime = roundStartTime + MONITORING_CONFIG.ROUND_DURATION_MS;
-        timeUntilRoundEnd = Math.max(0, roundEndTime - Date.now());
+        // Calculate time until round end
+        if (!roundSettled && dbRound.startTime) {
+          const roundStartTime = dbRound.startTime.getTime();
+          const roundEndTime = roundStartTime + MONITORING_CONFIG.ROUND_DURATION_MS;
+          timeUntilRoundEnd = Math.max(0, roundEndTime - Date.now());
 
-        // Should request VRF if round duration has elapsed
-        shouldRequestVRF = timeUntilRoundEnd === 0 && round.vrfRequestId === 0n;
+          // Should request VRF if round duration has elapsed and no VRF request yet
+          shouldRequestVRF = timeUntilRoundEnd === 0 && !dbRound.vrfRequestId;
 
-        // Should settle round if VRF fulfilled but not settled yet
-        if (round.vrfRequestId > 0n && !roundSettled) {
-          const vrfRequest = await publicClient.readContract({
-            address: CONTRACTS.gameEngine,
-            abi: GameEngineABI as any,
-            functionName: 'getRequestStatus',
-            args: [round.vrfRequestId],
-          }) as any;
-
-          shouldSettleRound = vrfRequest[1]; // fulfilled flag
+          // Should settle round if VRF fulfilled but not settled yet
+          if (dbRound.vrfRequestId && dbRound.vrfFulfilledAt && !roundSettled) {
+            shouldSettleRound = true;
+          }
         }
-      }
-    }
 
-    // Calculate time until next round starts (if current round is settled)
-    if (roundSettled) {
-      // If we don't have the settlement time in memory, fetch from database
-      if (lastSettledRoundId !== currentRoundId || roundSettledAt === null) {
-        const dbRound = await storage.getRoundById(currentRoundId.toString());
-        if (dbRound?.settledAt) {
-          roundSettledAt = dbRound.settledAt.getTime();
-          lastSettledRoundId = currentRoundId;
+        // Calculate time until next round starts (if current round is settled)
+        if (roundSettled && dbRound.settledAt) {
+          const timeSinceSettlement = Date.now() - dbRound.settledAt.getTime();
+          timeUntilNextRound = Math.max(0, NEXT_ROUND_DELAY_MS - timeSinceSettlement);
         }
-      }
-
-      // Calculate time remaining if we have settlement time
-      if (roundSettledAt !== null) {
-        const timeSinceSettlement = Date.now() - roundSettledAt;
-        timeUntilNextRound = Math.max(0, NEXT_ROUND_DELAY_MS - timeSinceSettlement);
       }
     }
 
     return {
       currentSeasonId,
       currentRoundId,
-      season,
-      round,
       roundSettled,
       timeUntilRoundEnd,
       timeUntilNextRound,
@@ -154,8 +98,8 @@ export async function startSeason(): Promise<{ success: boolean; txHash?: string
 
     const { request } = await publicClient.simulateContract({
       account: walletClient.account,
-      address: CONTRACTS.gameEngine,
-      abi: GameEngineABI as any,
+      address: CONTRACTS.gameCore,
+      abi: GameCoreABI as any,
       functionName: 'startSeason',
     });
 
@@ -181,8 +125,8 @@ export async function startRound(): Promise<{ success: boolean; txHash?: string;
 
     const { request } = await publicClient.simulateContract({
       account: walletClient.account,
-      address: CONTRACTS.gameEngine,
-      abi: GameEngineABI as any,
+      address: CONTRACTS.gameCore,
+      abi: GameCoreABI as any,
       functionName: 'startRound',
     });
 
@@ -213,8 +157,8 @@ export async function requestMatchResults(enableNativePayment = false): Promise<
 
     const { request } = await publicClient.simulateContract({
       account: walletClient.account,
-      address: CONTRACTS.gameEngine,
-      abi: GameEngineABI as any,
+      address: CONTRACTS.gameCore,
+      abi: GameCoreABI as any,
       functionName: 'requestMatchResults',
       args: [enableNativePayment], // ABI shows no parameters - needs regeneration
     });
@@ -249,8 +193,8 @@ export async function settleRound(roundId: bigint): Promise<{
 
     const { request } = await publicClient.simulateContract({
       account: walletClient.account,
-      address: CONTRACTS.bettingPool,
-      abi: BettingPoolABI as any,
+      address: CONTRACTS.bettingCore,
+      abi: BettingCoreABI as any,
       functionName: 'settleRound',
       args: [roundId],
     });
@@ -281,11 +225,11 @@ export async function seedRoundPools(roundId: bigint): Promise<{
 
     const { request } = await publicClient.simulateContract({
       account: walletClient.account,
-      address: CONTRACTS.bettingPool,
-      abi: BettingPoolABI as any,
+      address: CONTRACTS.bettingCore,
+      abi: BettingCoreABI as any,
       functionName: 'seedRoundPools',
       args: [roundId],
-      gas: 5000000n, // Increase gas limit for seeding (seeds 10 matches)
+      gas: BigInt(500000), // Increase gas limit for seeding (seeds 10 matches)
     });
 
     const txHash = await walletClient.writeContract(request);
@@ -314,8 +258,8 @@ export async function finalizeRoundRevenue(roundId: bigint): Promise<{
 
     const { request } = await publicClient.simulateContract({
       account: walletClient.account,
-      address: CONTRACTS.bettingPool,
-      abi: BettingPoolABI as any,
+      address: CONTRACTS.bettingCore,
+      abi: BettingCoreABI as any,
       functionName: 'finalizeRoundRevenue',
       args: [roundId],
     });
@@ -329,6 +273,39 @@ export async function finalizeRoundRevenue(roundId: bigint): Promise<{
     return { success: true, txHash };
   } catch (error: any) {
     log(`Failed to finalize round revenue: ${error.message}`, 'error');
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Sweep round pool (after bounty claim deadline + grace period)
+ * Transfers unclaimed winnings to protocol and season pool
+ */
+export async function sweepRoundPool(roundId: bigint): Promise<{
+  success: boolean;
+  txHash?: string;
+  error?: string;
+}> {
+  try {
+    log(`Sweeping pool for round ${roundId}...`);
+
+    const { request } = await publicClient.simulateContract({
+      account: walletClient.account,
+      address: CONTRACTS.bettingCore,
+      abi: BettingCoreABI as any,
+      functionName: 'sweepRoundPool',
+      args: [roundId],
+    });
+
+    const txHash = await walletClient.writeContract(request);
+
+    await publicClient.waitForTransactionReceipt({ hash: txHash });
+
+    log(`✅ Round ${roundId} pool swept | TX: ${txHash}`);
+
+    return { success: true, txHash };
+  } catch (error: any) {
+    log(`Failed to sweep round pool: ${error.message}`, 'error');
     return { success: false, error: error.message };
   }
 }
@@ -362,14 +339,16 @@ export function startMonitoring() {
   setTimeout(async () => {
     try {
       const state = await getGameState();
-      if (state.currentRoundId > 0n) {
-        // Check if current round is seeded
-        const isSeeded = await publicClient.readContract({
-          address: CONTRACTS.bettingPool,
-          abi: BettingPoolABI as any,
-          functionName: 'isRoundSeeded',
+      if (state.currentRoundId > BigInt(0)) {
+        // Check if current round is seeded by reading round metadata
+        const roundMetadata = await publicClient.readContract({
+          address: CONTRACTS.bettingCore,
+          abi: BettingCoreABI as any,
+          functionName: 'getRoundMetadata',
           args: [state.currentRoundId],
-        }) as boolean;
+        }) as any;
+
+        const isSeeded = roundMetadata.seeded || false;
 
         if (!isSeeded) {
           log(`Current round ${state.currentRoundId} is not seeded. Seeding now...`, 'warn');
@@ -387,12 +366,12 @@ export function startMonitoring() {
   monitoringInterval = setInterval(async () => {
     try {
       const state = await getGameState();
-      const dbRound = state.currentRoundId > 0n
+      const dbRound = state.currentRoundId > BigInt(0)
         ? await storage.getRoundById(state.currentRoundId.toString())
         : null;
 
       // Auto-start season if no season exists (fresh contract)
-      if (state.currentSeasonId === 0n) {
+      if (state.currentSeasonId === BigInt(0)) {
         log('No active season found. Auto-starting season...', 'warn');
         const result = await startSeason();
         if (result.success) {
@@ -403,19 +382,19 @@ export function startMonitoring() {
           if (roundResult.success) {
             log('✅ First round auto-started successfully');
             // Seed the first round
-            await seedRoundPools(1n);
+            await seedRoundPools(BigInt(1));
           }
         }
         return; // Skip rest of monitoring this cycle
       }
 
       // Auto-start round if season exists but no round (shouldn't happen normally)
-      if (state.currentSeasonId > 0n && state.currentRoundId === 0n && state.season?.active) {
+      if (state.currentSeasonId > BigInt(0) && state.currentRoundId === BigInt(0)) {
         log('Active season found but no round. Auto-starting round...', 'warn');
         const result = await startRound();
         if (result.success) {
           log('✅ Round auto-started successfully');
-          const newRoundId = state.currentRoundId + 1n;
+          const newRoundId = BigInt(1);
           await seedRoundPools(newRoundId);
         }
         return;
@@ -437,7 +416,7 @@ export function startMonitoring() {
       }
 
       // Auto-settle round if VRF fulfilled
-      if (state.shouldSettleRound && state.currentRoundId > 0n) {
+      if (state.shouldSettleRound && state.currentRoundId > BigInt(0)) {
         log('VRF fulfilled. Auto-settling round...', 'warn');
         await settleRound(state.currentRoundId);
 
@@ -455,30 +434,23 @@ export function startMonitoring() {
         const timeSinceSettlement = Date.now() - roundSettledAt;
 
         if (timeSinceSettlement >= NEXT_ROUND_DELAY_MS) {
-          // Check if season is still active and hasn't reached max rounds
-          if (state.season?.active && !state.season?.completed) {
-            log(`10 minutes elapsed since round ${state.currentRoundId} settled. Starting next round...`, 'warn');
+          // Start next round automatically
+          log(`10 minutes elapsed since round ${state.currentRoundId} settled. Starting next round...`, 'warn');
 
-            const result = await startRound();
+          const result = await startRound();
 
-            if (result.success) {
-              // Reset settlement tracking
-              lastSettledRoundId = null;
-              roundSettledAt = null;
-              log('✅ Next round started automatically');
-
-              // Seed the new round pools
-              const newRoundId = state.currentRoundId + 1n;
-              log(`Seeding pools for round ${newRoundId}...`);
-              await seedRoundPools(newRoundId);
-            } else {
-              log(`Failed to auto-start next round: ${result.error}`, 'error');
-            }
-          } else {
-            log('Season completed or inactive. Not starting new round.', 'warn');
-            // Reset tracking so we don't keep trying
+          if (result.success) {
+            // Reset settlement tracking
             lastSettledRoundId = null;
             roundSettledAt = null;
+            log('✅ Next round started automatically');
+
+            // Seed the new round pools
+            const newRoundId = state.currentRoundId + BigInt(1);
+            log(`Seeding pools for round ${newRoundId}...`);
+            await seedRoundPools(newRoundId);
+          } else {
+            log(`Failed to auto-start next round: ${result.error}`, 'error');
           }
         } else {
           const remainingTime = Math.ceil((NEXT_ROUND_DELAY_MS - timeSinceSettlement) / 1000 / 60);
@@ -501,7 +473,7 @@ async function initializeGame() {
     const state = await getGameState();
    
     // Case 1: No season exists (fresh contract) - start season and first round
-    if (state.currentSeasonId === 0n) {
+    if (state.currentSeasonId === BigInt(0)) {
       log('🚀 Fresh contract detected. Starting season and first round...', 'warn');
 
       const seasonResult = await startSeason();
@@ -531,7 +503,7 @@ async function initializeGame() {
     }
 
     // Case 2: Season exists but no round - start first round of season
-    if (state.currentSeasonId > 0n && state.currentRoundId === 0n && state.season?.active) {
+    if (state.currentSeasonId > BigInt(0) && state.currentRoundId === BigInt(0)) {
       log('Active season found but no round. Starting first round...', 'warn');
 
       const roundResult = await startRound();
@@ -541,24 +513,18 @@ async function initializeGame() {
       }
 
       log('✅ Round started');
-      await seedRoundPools(1n);
+      await seedRoundPools(BigInt(1));
       log('✅ Round pools seeded');
 
       return;
     }
 
-    // Case 3: Round exists - sync to database if not already there
-    if (state.currentRoundId > 0n && state.round) {
+    // Case 3: Round exists - check if synced to database
+    if (state.currentRoundId > BigInt(0)) {
       const existingRound = await storage.getRoundById(state.currentRoundId.toString());
 
       if (!existingRound) {
-        log(`Syncing current round ${state.currentRoundId} to database...`);
-        await syncRoundStart(
-          state.currentRoundId,
-          state.currentSeasonId,
-          state.round.startTime
-        );
-        log(`✅ Round ${state.currentRoundId} synced to database`);
+        log(`Current round ${state.currentRoundId} not in database - will be synced by RoundStarted event listener`);
       } else {
         log(`✅ Round ${state.currentRoundId} already in database`);
       }

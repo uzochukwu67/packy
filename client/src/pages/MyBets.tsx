@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Loader2, Ticket, ExternalLink, CheckCircle2, Trophy } from "lucide-react";
 import { formatToken } from "@/contracts/types";
 import { formatDistance } from "date-fns";
-import { useClaimWinnings } from "@/hooks/contracts/useBettingPool";
+import { useClaimWinnings } from "@/hooks/contracts/useBettingCore";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
@@ -37,7 +37,7 @@ function BetRow({ bet, onClaimed }: { bet: Bet; onClaimed: () => void }) {
     if (isSuccess) {
       toast({
         title: "Winnings Claimed! 🎉",
-        description: `You received ${formatToken(finalPayout)} LEAGUE tokens!`,
+        description: `You received ${formatToken(finalPayout)} LBT tokens!`,
         className: "bg-green-50 border-green-200 text-green-900",
       });
       onClaimed();
@@ -152,7 +152,7 @@ function BetRow({ bet, onClaimed }: { bet: Bet; onClaimed: () => void }) {
         <p className="font-mono text-sm font-bold text-gray-900">
           {stakeAmount.toFixed(2)}
         </p>
-        <p className="text-xs text-gray-500">LEAGUE</p>
+        <p className="text-xs text-gray-500">LBT</p>
       </div>
 
       {/* Status / Action */}
@@ -208,7 +208,7 @@ function BetRow({ bet, onClaimed }: { bet: Bet; onClaimed: () => void }) {
           {bet.status === 'lost' ? '-' : potentialWinnings.toFixed(2)}
         </p>
         {bet.status !== 'lost' && (
-          <p className="text-xs text-gray-500">LEAGUE</p>
+          <p className="text-xs text-gray-500">LBT</p>
         )}
       </div>
     </motion.div>

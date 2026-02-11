@@ -6,6 +6,10 @@ import {
   matches,
   userPoints,
   pointsHistory,
+  referrals,
+  referralEarnings,
+  bountyClaims,
+  roundSweeps,
   type User,
   type InsertUser,
   type Bet,
@@ -17,7 +21,15 @@ import {
   type UserPoints,
   type InsertUserPoints,
   type PointsHistory,
-  type InsertPointsHistory
+  type InsertPointsHistory,
+  type Referral,
+  type InsertReferral,
+  type ReferralEarning,
+  type InsertReferralEarning,
+  type BountyClaim,
+  type InsertBountyClaim,
+  type RoundSweep,
+  type InsertRoundSweep
 } from "@shared/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 
@@ -55,6 +67,24 @@ export interface IStorage {
   awardBetWonPoints(walletAddress: string, betId: string): Promise<void>;
   getPointsHistory(walletAddress: string, limit?: number): Promise<PointsHistory[]>;
   getLeaderboard(limit?: number): Promise<UserPoints[]>;
+
+  // Referral operations
+  createReferral(referral: InsertReferral): Promise<Referral>;
+  getReferralByReferee(refereeAddress: string): Promise<Referral | undefined>;
+  getReferralsByReferrer(referrerAddress: string): Promise<Referral[]>;
+  updateReferralEarnings(referrerAddress: string, refereeAddress: string, amount: string): Promise<void>;
+  recordReferralEarning(earning: InsertReferralEarning): Promise<ReferralEarning>;
+  getReferralEarnings(referrerAddress: string, limit?: number): Promise<ReferralEarning[]>;
+  getTotalReferralEarnings(referrerAddress: string): Promise<string>;
+
+  // Bounty operations
+  recordBountyClaim(claim: InsertBountyClaim): Promise<BountyClaim>;
+  getBountyClaimByBetId(betId: string): Promise<BountyClaim | undefined>;
+  getBountyClaimsByAddress(claimerAddress: string, limit?: number): Promise<BountyClaim[]>;
+
+  // Round sweep operations
+  recordRoundSweep(sweep: InsertRoundSweep): Promise<RoundSweep>;
+  getRoundSweep(roundId: string): Promise<RoundSweep | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -302,6 +332,107 @@ export class DatabaseStorage implements IStorage {
       .from(userPoints)
       .orderBy(desc(userPoints.totalPoints))
       .limit(limit);
+  }
+
+  // ============ Referral Operations ============
+
+  async createReferral(insertReferral: InsertReferral): Promise<Referral> {
+    const [referral] = await db.insert(referrals).values(insertReferral).returning();
+    return referral;
+  }
+
+  async getReferralByReferee(refereeAddress: string): Promise<Referral | undefined> {
+    const [referral] = await db
+      .select()
+      .from(referrals)
+      .where(eq(referrals.refereeAddress, refereeAddress));
+    return referral;
+  }
+
+  async getReferralsByReferrer(referrerAddress: string): Promise<Referral[]> {
+    return db
+      .select()
+      .from(referrals)
+      .where(eq(referrals.referrerAddress, referrerAddress))
+      .orderBy(desc(referrals.createdAt));
+  }
+
+  async updateReferralEarnings(referrerAddress: string, refereeAddress: string, amount: string): Promise<void> {
+    await db
+      .update(referrals)
+      .set({
+        totalReferralEarnings: sql`CAST(${referrals.totalReferralEarnings} AS NUMERIC) + CAST(${amount} AS NUMERIC)`,
+      })
+      .where(
+        and(
+          eq(referrals.referrerAddress, referrerAddress),
+          eq(referrals.refereeAddress, refereeAddress)
+        )
+      );
+  }
+
+  async recordReferralEarning(insertEarning: InsertReferralEarning): Promise<ReferralEarning> {
+    const [earning] = await db.insert(referralEarnings).values(insertEarning).returning();
+    return earning;
+  }
+
+  async getReferralEarnings(referrerAddress: string, limit: number = 50): Promise<ReferralEarning[]> {
+    return db
+      .select()
+      .from(referralEarnings)
+      .where(eq(referralEarnings.referrerAddress, referrerAddress))
+      .orderBy(desc(referralEarnings.createdAt))
+      .limit(limit);
+  }
+
+  async getTotalReferralEarnings(referrerAddress: string): Promise<string> {
+    const result = await db
+      .select({
+        total: sql<string>`COALESCE(SUM(CAST(${referralEarnings.rewardAmount} AS NUMERIC)), 0)::TEXT`,
+      })
+      .from(referralEarnings)
+      .where(eq(referralEarnings.referrerAddress, referrerAddress));
+
+    return result[0]?.total || '0';
+  }
+
+  // ============ Bounty Operations ============
+
+  async recordBountyClaim(insertClaim: InsertBountyClaim): Promise<BountyClaim> {
+    const [claim] = await db.insert(bountyClaims).values(insertClaim).returning();
+    return claim;
+  }
+
+  async getBountyClaimByBetId(betId: string): Promise<BountyClaim | undefined> {
+    const [claim] = await db
+      .select()
+      .from(bountyClaims)
+      .where(eq(bountyClaims.betId, betId));
+    return claim;
+  }
+
+  async getBountyClaimsByAddress(claimerAddress: string, limit: number = 50): Promise<BountyClaim[]> {
+    return db
+      .select()
+      .from(bountyClaims)
+      .where(eq(bountyClaims.claimerAddress, claimerAddress))
+      .orderBy(desc(bountyClaims.claimedAt))
+      .limit(limit);
+  }
+
+  // ============ Round Sweep Operations ============
+
+  async recordRoundSweep(insertSweep: InsertRoundSweep): Promise<RoundSweep> {
+    const [sweep] = await db.insert(roundSweeps).values(insertSweep).returning();
+    return sweep;
+  }
+
+  async getRoundSweep(roundId: string): Promise<RoundSweep | undefined> {
+    const [sweep] = await db
+      .select()
+      .from(roundSweeps)
+      .where(eq(roundSweeps.roundId, roundId));
+    return sweep;
   }
 }
 

@@ -3,7 +3,8 @@ import { sepolia } from 'wagmi/chains';
 import { injected } from 'wagmi/connectors';
 
 // Get RPC URL from environment variable or use default
-const rpcUrl = import.meta.env.VITE_RPC_URL || 'https://sepolia.drpc.org';
+
+const rpcUrl = import.meta.env.VITE_RPC_URL || 'https://ethereum-sepolia-rpc.publicnode.com';
 
 // Debug: Log the RPC URL being used
 console.log('Wagmi RPC URL:', rpcUrl);

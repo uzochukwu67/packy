@@ -1,7 +1,7 @@
 import { useParams } from "wouter";
 import { useRoundResults, useUserRoundBets } from "@/hooks/useRounds";
 import { useAccount } from "wagmi";
-import { useClaimWinnings } from "@/hooks/contracts/useBettingPool";
+import { useClaimWinnings } from "@/hooks/contracts/useBettingCore";
 import { Loader2, AlertCircle, Trophy, TrendingUp, Users, Coins, CheckCircle, XCircle, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -138,7 +138,7 @@ export default function RoundResults() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {parseFloat(formatEther(BigInt(statistics.totalVolume || '0'))).toFixed(2)} LEAGUE
+              {parseFloat(formatEther(BigInt(statistics.totalVolume || '0'))).toFixed(2)} LBT
             </div>
           </CardContent>
         </Card>
@@ -267,11 +267,11 @@ export default function RoundResults() {
                         <div className="grid grid-cols-2 gap-4 text-sm">
                           <div>
                             <p className="text-gray-500">Bet Amount</p>
-                            <p className="font-semibold">{parseFloat(formatEther(BigInt(bet.amount))).toFixed(2)} LEAGUE</p>
+                            <p className="font-semibold">{parseFloat(formatEther(BigInt(bet.amount))).toFixed(2)} LBT</p>
                           </div>
                           <div>
                             <p className="text-gray-500">Potential Winnings</p>
-                            <p className="font-semibold">{parseFloat(formatEther(BigInt(bet.potentialWinnings))).toFixed(2)} LEAGUE</p>
+                            <p className="font-semibold">{parseFloat(formatEther(BigInt(bet.potentialWinnings))).toFixed(2)} LBT</p>
                           </div>
                           <div>
                             <p className="text-gray-500">Parlay Multiplier</p>

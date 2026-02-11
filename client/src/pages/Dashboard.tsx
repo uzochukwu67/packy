@@ -1,6 +1,6 @@
 import { MatchCard } from "@/components/ui/MatchCard";
 import { Loader2, AlertCircle, RefreshCw, Trophy, Target, Clock } from "lucide-react";
-import { useDashboardData } from "@/hooks/contracts/useGameEngine";
+import { useDashboardData } from "@/hooks/contracts/useGameCore";
 import { useGameState } from "@/hooks/useGameState";
 import type { Match } from "@/contracts/types";
 import { useChainId } from "wagmi";

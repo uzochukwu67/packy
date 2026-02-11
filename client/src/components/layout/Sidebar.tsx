@@ -1,8 +1,8 @@
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, Coins, History, Trophy, Wallet, Droplet, CheckCircle, Loader2, Clock, Award } from "lucide-react";
+import { LayoutDashboard, History, Trophy, Wallet, Droplet, CheckCircle, Loader2, Clock, Award } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
-import { injected, metaMask } from "wagmi/connectors";
+import { injected } from "wagmi/connectors";
 import { useLeagueBalance } from "@/hooks/contracts/useLeagueToken";
 import { useFaucet } from "@/hooks/useFaucet";
 import { useUserPoints } from "@/hooks/usePoints";
@@ -21,7 +21,6 @@ export function Sidebar() {
 
   const navItems = [
     { label: "Betting Dashboard", icon: LayoutDashboard, href: "/dashboard" },
-    { label: "Liquidity Pool", icon: Coins, href: "/liquidity" },
     { label: "My Bets", icon: History, href: "/my-bets" },
     { label: "Round History", icon: Clock, href: "/history" },
     { label: "Season Predictor", icon: Trophy, href: "/season" },
@@ -48,13 +47,13 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="w-64 border-r border-border bg-secondary flex-shrink-0 hidden md:flex flex-col h-screen sticky top-0">
+    <aside className="w-64 border-r border-white/5 bg-zinc-950 flex-shrink-0 hidden md:flex flex-col h-screen sticky top-0">
       <div className="p-6">
         <div className="flex items-center gap-2 mb-8">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white font-bold font-display text-xl">
-            P
+          <div className="w-8 h-8 rounded bg-white flex items-center justify-center">
+            <span className="text-black font-black text-sm">P</span>
           </div>
-          <span className="font-display font-bold text-2xl text-gray-900 tracking-tight">Phantasma</span>
+          <span className="font-bold tracking-tighter text-white text-xl">PHANTASMA</span>
         </div>
 
         <nav className="space-y-1">
@@ -62,8 +61,13 @@ export function Sidebar() {
             const isActive = location === item.href;
             return (
               <Link key={item.href} href={item.href}>
-                <div className={cn("nav-item cursor-pointer", isActive ? "nav-item-active" : "nav-item-inactive")}>
-                  <item.icon className={cn("w-5 h-5", isActive ? "text-primary" : "text-gray-400")} />
+                <div className={cn(
+                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer",
+                  isActive
+                    ? "bg-white/10 text-white"
+                    : "text-zinc-400 hover:text-white hover:bg-white/5"
+                )}>
+                  <item.icon className="w-5 h-5" />
                   {item.label}
                 </div>
               </Link>
@@ -72,35 +76,35 @@ export function Sidebar() {
         </nav>
       </div>
 
-      <div className="mt-auto p-6 border-t border-gray-200 space-y-3">
+      <div className="mt-auto p-6 border-t border-white/5 space-y-3">
         {/* Points Display */}
         {isConnected && userPoints && (
-          <div className="bg-gradient-to-br from-yellow-400/20 to-orange-400/10 rounded-xl p-4 border border-yellow-400/30">
+          <div className="bg-zinc-900 rounded-xl p-4 border border-white/10">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-gray-600 uppercase tracking-wide">Testnet Points</span>
-              <Award className="w-4 h-4 text-yellow-600" />
+              <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">Testnet Points</span>
+              <Award className="w-4 h-4 text-cyan-500" />
             </div>
-            <div className="text-2xl font-bold text-gray-900 font-mono">
+            <div className="text-2xl font-bold text-white font-mono tracking-tight">
               {userPoints.totalPoints.toLocaleString()}
             </div>
-            <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
+            <div className="flex items-center justify-between mt-2 text-xs text-zinc-400">
               <span>{userPoints.betsPlaced} bets</span>
               <span>{userPoints.betsWon} won</span>
             </div>
           </div>
         )}
 
-        {/* LEAGUE Balance Display */}
+        {/* LBT Balance Display */}
         {isConnected && (
-          <div className="bg-gradient-to-br from-primary/10 to-primary/5 rounded-xl p-4 border border-primary/20">
+          <div className="bg-zinc-900 rounded-xl p-4 border border-white/10">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Balance</span>
-              <Coins className="w-4 h-4 text-primary" />
+              <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">Balance</span>
+              <Droplet className="w-4 h-4 text-cyan-500" />
             </div>
-            <div className="text-2xl font-bold text-gray-900 font-mono">
+            <div className="text-2xl font-bold text-white font-mono tracking-tight">
               {balanceFloat.toLocaleString('en-US', { maximumFractionDigits: 2 })}
             </div>
-            <div className="text-xs text-gray-500 mt-0.5">LEAGUE</div>
+            <div className="text-xs text-zinc-400 mt-0.5">LBT</div>
           </div>
         )}
 
@@ -110,10 +114,10 @@ export function Sidebar() {
             onClick={handleFaucetClick}
             disabled={isLoading || showSuccess}
             className={cn(
-              "w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold transition-all",
+              "w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-colors",
               showSuccess
-                ? "bg-green-500 text-white border-green-500"
-                : "bg-primary text-white hover:bg-primary/90 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+                ? "bg-cyan-500 text-black"
+                : "bg-white text-black hover:bg-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed"
             )}
           >
             {isLoading ? (
@@ -129,7 +133,7 @@ export function Sidebar() {
             ) : (
               <>
                 <Droplet className="w-4 h-4" />
-                Get 1000 LEAGUE
+                Get 1000 LBT
               </>
             )}
           </button>
@@ -137,7 +141,7 @@ export function Sidebar() {
 
         {/* Error Message */}
         {error && (
-          <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">
+          <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-2">
             {error}
           </div>
         )}
@@ -145,9 +149,9 @@ export function Sidebar() {
         {/* Wallet Connect/Disconnect */}
         <button
           onClick={handleWalletClick}
-          className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-white border border-gray-200 hover:border-primary/50 text-sm font-semibold text-gray-700 shadow-sm transition-all hover:-translate-y-0.5"
+          className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-zinc-900 border border-white/10 hover:border-cyan-400/50 text-xs font-bold uppercase tracking-widest text-zinc-300 hover:text-white transition-colors"
         >
-          <Wallet className="w-4 h-4 text-primary" />
+          <Wallet className="w-4 h-4" />
           {isConnected ? (
             <span className="truncate max-w-[120px]">{address?.slice(0, 6)}...{address?.slice(-4)}</span>
           ) : (

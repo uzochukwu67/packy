@@ -11,7 +11,7 @@ import {
   useClaimPrize,
   usePredictionDistribution
 } from "@/hooks/contracts/useSeasonPredictor";
-import { useCurrentSeason, useTeam, useSeason } from "@/hooks/contracts/useGameEngine";
+import { useCurrentSeason, useTeam, useSeason } from "@/hooks/contracts/useGameCore";
 import { formatToken } from "@/contracts/types";
 import { useToast } from "@/hooks/use-toast";
 

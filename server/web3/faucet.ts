@@ -4,7 +4,7 @@
  */
 
 import { publicClient, walletClient, CONTRACTS, FAUCET_CONFIG, log } from './config';
-import { LeagueTokenABI } from './abis/index';
+import { LeagueBetTokenABI } from './abis/index';
 
 // In-memory rate limiting (use Redis in production)
 interface FaucetRequest {
@@ -95,8 +95,8 @@ export async function requestFaucetTokens(address: `0x${string}`): Promise<{
 
     // Check faucet balance
     const faucetBalance = await publicClient.readContract({
-      address: CONTRACTS.leagueToken,
-      abi: LeagueTokenABI as any,
+      address: CONTRACTS.leagueBetToken,
+      abi: LeagueBetTokenABI as any,
       functionName: 'balanceOf',
       args: [walletClient.account.address],
     }) as bigint;
@@ -109,11 +109,11 @@ export async function requestFaucetTokens(address: `0x${string}`): Promise<{
       };
     }
 
-    // Transfer tokens
+    // Transfer LBT tokens
     const { request } = await publicClient.simulateContract({
       account: walletClient.account,
-      address: CONTRACTS.leagueToken,
-      abi: LeagueTokenABI as any,
+      address: CONTRACTS.leagueBetToken,
+      abi: LeagueBetTokenABI as any,
       functionName: 'transfer',
       args: [address, FAUCET_CONFIG.FAUCET_AMOUNT],
     });
@@ -136,7 +136,7 @@ export async function requestFaucetTokens(address: `0x${string}`): Promise<{
 
       const amountInEther = Number(FAUCET_CONFIG.FAUCET_AMOUNT) / 10 ** 18;
 
-      log(`✅ Sent ${amountInEther} LEAGUE to ${address} | TX: ${txHash}`);
+      log(`✅ Sent ${amountInEther} LBT to ${address} | TX: ${txHash}`);
 
       return {
         success: true,
@@ -161,8 +161,8 @@ export async function requestFaucetTokens(address: `0x${string}`): Promise<{
 export async function getFaucetStats() {
   try {
     const balance = await publicClient.readContract({
-      address: CONTRACTS.leagueToken,
-      abi: LeagueTokenABI as any,
+      address: CONTRACTS.leagueBetToken,
+      abi: LeagueBetTokenABI as any,
       functionName: 'balanceOf',
       args: [walletClient.account.address],
     }) as bigint;
