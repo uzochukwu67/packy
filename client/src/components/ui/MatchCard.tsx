@@ -1,8 +1,8 @@
 import { useBetSlip } from "@/context/BetSlipContext";
 import { cn } from "@/lib/utils";
 import { Users, Loader2 } from "lucide-react";
-import { usePreviewMatchOdds } from "@/hooks/contracts/useBettingPool";
-import { useTeam } from "@/hooks/contracts/useGameEngine";
+import { useLockedOdds } from "@/hooks/contracts/useBettingCore";
+import { useTeam } from "@/hooks/contracts/useGameCore";
 import { formatOdds } from "@/contracts/types";
 import type { Match } from "@/contracts/types";
 
@@ -11,19 +11,31 @@ interface MatchCardProps {
   matchIndex: number;
   match: Match;
   startTime: string;
+  bettingDisabled?: boolean;
 }
 
-export function MatchCard({ roundId, matchIndex, match, startTime }: MatchCardProps) {
+export function MatchCard({ roundId, matchIndex, match, startTime, bettingDisabled = false }: MatchCardProps) {
   const { addBet, bets } = useBetSlip();
 
-  // Fetch real-time odds from blockchain
-  const { data: oddsData, isLoading: oddsLoading } = usePreviewMatchOdds(roundId, matchIndex);
+  // Fetch locked odds from blockchain (fixed at seeding time)
+  const { data: oddsData, isLoading: oddsLoading, error: oddsError } = useLockedOdds(roundId, matchIndex);
 
   // Fetch team names
   const { data: homeTeam } = useTeam(Number(match.homeTeamId));
   const { data: awayTeam } = useTeam(Number(match.awayTeamId));
 
-  // Parse odds from contract (returns [homeOdds, awayOdds, drawOdds] as bigints)
+  // Debug: Log odds data for first match
+  if (matchIndex === 0 && (oddsData || oddsError)) {
+    console.log('Match 0 odds:', {
+      roundId: roundId?.toString(),
+      matchIndex,
+      oddsData,
+      oddsError,
+      raw: oddsData ? [oddsData[0]?.toString(), oddsData[1]?.toString(), oddsData[2]?.toString(), oddsData[3]] : null
+    });
+  }
+
+  // Parse odds from contract (returns [homeOdds, awayOdds, drawOdds, locked] as bigints)
   const homeOdds = oddsData ? formatOdds(oddsData[0]) : 0;
   const awayOdds = oddsData ? formatOdds(oddsData[1]) : 0;
   const drawOdds = oddsData ? formatOdds(oddsData[2]) : 0;
@@ -36,12 +48,14 @@ export function MatchCard({ roundId, matchIndex, match, startTime }: MatchCardPr
     return bets.some(b => b.matchId === matchId && b.selection === selection);
   };
 
-  const handleSelect = (selection: string, odds: number, outcome: number) => {
+  const handleSelect = (selection: string, odds: number, outcome: 1 | 2 | 3) => {
     addBet({
       id: `${matchId}-${selection}`,
       matchId,
+      matchIndex,
       matchTitle: `${teamA} vs ${teamB}`,
       selection,
+      outcome,
       odds,
     });
   };
@@ -81,13 +95,13 @@ export function MatchCard({ roundId, matchIndex, match, startTime }: MatchCardPr
         <div className="md:col-span-7 grid grid-cols-3 gap-3">
           <button
             onClick={() => handleSelect("Home", homeOdds, 1)}
-            disabled={oddsLoading || match.settled}
+            disabled={oddsLoading || match.settled || bettingDisabled}
             className={cn(
               "flex flex-col items-center justify-center py-3 px-2 rounded-xl border transition-all duration-200",
               isSelected("Home")
                 ? "bg-primary text-white border-primary shadow-lg shadow-primary/20 scale-[1.02]"
                 : "bg-gray-50 border-gray-200 text-gray-700 hover:border-primary/50 hover:bg-white",
-              (oddsLoading || match.settled) && "opacity-50 cursor-not-allowed"
+              (oddsLoading || match.settled || bettingDisabled) && "opacity-50 cursor-not-allowed"
             )}
           >
             <span className={cn("text-xs mb-1", isSelected("Home") ? "text-white/80" : "text-gray-400")}>1</span>
@@ -100,13 +114,13 @@ export function MatchCard({ roundId, matchIndex, match, startTime }: MatchCardPr
 
           <button
             onClick={() => handleSelect("Draw", drawOdds, 3)}
-            disabled={oddsLoading || match.settled}
+            disabled={oddsLoading || match.settled || bettingDisabled}
             className={cn(
               "flex flex-col items-center justify-center py-3 px-2 rounded-xl border transition-all duration-200",
               isSelected("Draw")
                 ? "bg-primary text-white border-primary shadow-lg shadow-primary/20 scale-[1.02]"
                 : "bg-gray-50 border-gray-200 text-gray-700 hover:border-primary/50 hover:bg-white",
-              (oddsLoading || match.settled) && "opacity-50 cursor-not-allowed"
+              (oddsLoading || match.settled || bettingDisabled) && "opacity-50 cursor-not-allowed"
             )}
           >
             <span className={cn("text-xs mb-1", isSelected("Draw") ? "text-white/80" : "text-gray-400")}>X</span>
@@ -119,13 +133,13 @@ export function MatchCard({ roundId, matchIndex, match, startTime }: MatchCardPr
 
           <button
             onClick={() => handleSelect("Away", awayOdds, 2)}
-            disabled={oddsLoading || match.settled}
+            disabled={oddsLoading || match.settled || bettingDisabled}
             className={cn(
               "flex flex-col items-center justify-center py-3 px-2 rounded-xl border transition-all duration-200",
               isSelected("Away")
                 ? "bg-primary text-white border-primary shadow-lg shadow-primary/20 scale-[1.02]"
                 : "bg-gray-50 border-gray-200 text-gray-700 hover:border-primary/50 hover:bg-white",
-              (oddsLoading || match.settled) && "opacity-50 cursor-not-allowed"
+              (oddsLoading || match.settled || bettingDisabled) && "opacity-50 cursor-not-allowed"
             )}
           >
             <span className={cn("text-xs mb-1", isSelected("Away") ? "text-white/80" : "text-gray-400")}>2</span>

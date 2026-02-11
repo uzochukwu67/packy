@@ -18,6 +18,7 @@ import {
   seedRoundPools,
   finalizeRoundRevenue,
 } from "./web3/game-monitor";
+import { manualSyncRound } from "./web3/event-sync";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -31,10 +32,13 @@ export async function registerRoutes(
 
       if (!user) {
         user = await storage.createUser(input);
-        return res.status(201).json(user);
+        return res.status(201).json({
+          success: true,
+          user,
+        });
       }
 
-      res.json(user);
+      return res.json(user);
     } catch (err) {
       if (err instanceof z.ZodError) {
         return res.status(400).json({
@@ -86,7 +90,7 @@ export async function registerRoutes(
   app.get('/api/faucet/stats', async (_req, res) => {
     try {
       const stats = await getFaucetStats();
-      res.json(stats);
+      return res.json(stats);
     } catch (error: any) {
       return res.status(500).json({
         error: error.message || 'Failed to get faucet stats'
@@ -107,7 +111,7 @@ export async function registerRoutes(
       }
 
       const history = getUserFaucetHistory(address as `0x${string}`);
-      res.json(history);
+      return res.json(history);
     } catch (error: any) {
       return res.status(500).json({
         error: error.message || 'Failed to get faucet history'
@@ -128,7 +132,7 @@ export async function registerRoutes(
       }
 
       const result = canRequestTokens(address as `0x${string}`);
-      res.json(result);
+      return res.json(result);
     } catch (error: any) {
       return res.status(500).json({
         error: error.message || 'Failed to check request status'
@@ -167,11 +171,12 @@ export async function registerRoutes(
         } : null,
         roundSettled: state.roundSettled,
         timeUntilRoundEnd: state.timeUntilRoundEnd,
+        timeUntilNextRound: state.timeUntilNextRound,
         shouldRequestVRF: state.shouldRequestVRF,
         shouldSettleRound: state.shouldSettleRound,
       };
 
-      res.json(serializedState);
+      return res.json(serializedState);
     } catch (error: any) {
       return res.status(500).json({
         error: error.message || 'Failed to get game state'
@@ -188,9 +193,9 @@ export async function registerRoutes(
       const result = await startSeason();
 
       if (result.success) {
-        res.json(result);
+        return res.json(result);
       } else {
-        res.status(500).json(result);
+        return res.status(500).json(result);
       }
     } catch (error: any) {
       return res.status(500).json({
@@ -209,9 +214,9 @@ export async function registerRoutes(
       const result = await startRound();
 
       if (result.success) {
-        res.json(result);
+        return res.json(result);
       } else {
-        res.status(500).json(result);
+        return res.status(500).json(result);
       }
     } catch (error: any) {
       return res.status(500).json({
@@ -232,9 +237,9 @@ export async function registerRoutes(
       const result = await requestMatchResults(enableNativePayment);
 
       if (result.success) {
-        res.json(result);
+        return res.json(result);
       } else {
-        res.status(500).json(result);
+        return res.status(500).json(result);
       }
     } catch (error: any) {
       return res.status(500).json({
@@ -263,9 +268,9 @@ export async function registerRoutes(
       const result = await settleRound(BigInt(roundId));
 
       if (result.success) {
-        res.json(result);
+        return res.json(result);
       } else {
-        res.status(500).json(result);
+        return res.status(500).json(result);
       }
     } catch (error: any) {
       return res.status(500).json({
@@ -307,6 +312,36 @@ export async function registerRoutes(
   });
 
   /**
+   * Manually sync round from blockchain to database
+   * POST /api/admin/sync-round
+   * Body: { roundId: string }
+   */
+  app.post('/api/admin/sync-round', async (req, res) => {
+    try {
+      const { roundId } = req.body;
+
+      if (!roundId) {
+        return res.status(400).json({
+          success: false,
+          error: 'roundId is required'
+        });
+      }
+
+      await manualSyncRound(BigInt(roundId));
+
+      return res.json({
+        success: true,
+        message: `Round ${roundId} synced successfully`
+      });
+    } catch (error: any) {
+      return res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to sync round'
+      });
+    }
+  });
+
+  /**
    * Finalize round revenue distribution
    * POST /api/admin/finalize-revenue
    * Body: { roundId: string }
@@ -325,9 +360,9 @@ export async function registerRoutes(
       const result = await finalizeRoundRevenue(BigInt(roundId));
 
       if (result.success) {
-        res.json(result);
+        return res.json(result);
       } else {
-        res.status(500).json(result);
+        return res.status(500).json(result);
       }
     } catch (error: any) {
       return res.status(500).json({
@@ -376,7 +411,7 @@ export async function registerRoutes(
         txHash
       });
 
-      res.json(bet);
+      return res.json(bet);
     } catch (error: any) {
       return res.status(500).json({
         error: error.message || 'Failed to save bet'
@@ -418,7 +453,7 @@ export async function registerRoutes(
         outcomes: JSON.parse(bet.outcomes)
       }));
 
-      res.json(formattedBets);
+      return res.json(formattedBets);
     } catch (error: any) {
       return res.status(500).json({
         error: error.message || 'Failed to get bets'
@@ -448,10 +483,313 @@ export async function registerRoutes(
         return res.status(404).json({ error: 'Bet not found' });
       }
 
-      res.json(bet);
+      return res.json(bet);
     } catch (error: any) {
       return res.status(500).json({
         error: error.message || 'Failed to update bet status'
+      });
+    }
+  });
+
+  // ============ Game State Routes (Cached from Database) ============
+
+  /**
+   * Get current game state with time remaining
+   * GET /api/game/state
+   * Returns cached data from database with real-time countdown
+   */
+  app.get('/api/game/state', async (_req, res) => {
+    try {
+      const activeRound = await storage.getActiveRound();
+
+      if (!activeRound) {
+        return res.json({
+          hasActiveRound: false,
+          message: 'No active round',
+        });
+      }
+
+      const now = Date.now();
+      const endTime = activeRound.endTime?.getTime() || 0;
+      const timeRemainingMs = Math.max(0, endTime - now);
+
+      return res.json({
+        hasActiveRound: true,
+        round: {
+          roundId: activeRound.roundId,
+          seasonId: activeRound.seasonId,
+          startTime: activeRound.startTime,
+          endTime: activeRound.endTime,
+          timeRemainingMs,
+          isActive: activeRound.isActive && timeRemainingMs > 0,
+          vrfFulfilled: !!activeRound.vrfFulfilledAt,
+          vrfFulfilledAt: activeRound.vrfFulfilledAt,
+          settled: activeRound.settled,
+          settledAt: activeRound.settledAt,
+        },
+      });
+    } catch (error: any) {
+      return res.status(500).json({
+        error: error.message || 'Failed to get game state'
+      });
+    }
+  });
+
+  /**
+   * Get matches for current active round
+   * GET /api/game/matches
+   */
+  app.get('/api/game/matches', async (_req, res) => {
+    try {
+      const activeRound = await storage.getActiveRound();
+
+      if (!activeRound) {
+        return res.json({
+          hasActiveRound: false,
+          matches: [],
+        });
+      }
+
+      const matches = await storage.getMatchesByRound(activeRound.roundId);
+
+      returnres.json({
+        hasActiveRound: true,
+        roundId: activeRound.roundId,
+        matches,
+      });
+    } catch (error: any) {
+      return res.status(500).json({
+        error: error.message || 'Failed to get matches'
+      });
+    }
+  });
+
+  /**
+   * Get matches for specific round by ID
+   * GET /api/game/rounds/:roundId/matches
+   */
+  app.get('/api/game/rounds/:roundId/matches', async (req, res) => {
+    try {
+      const { roundId } = req.params;
+
+      const round = await storage.getRoundById(roundId);
+      if (!round) {
+        return res.status(404).json({
+          error: 'Round not found'
+        });
+      }
+
+      const matches = await storage.getMatchesByRound(roundId);
+
+      return res.json({
+        round: {
+          roundId: round.roundId,
+          seasonId: round.seasonId,
+          startTime: round.startTime,
+          endTime: round.endTime,
+          isActive: round.isActive,
+          vrfFulfilled: !!round.vrfFulfilledAt,
+          settled: round.settled,
+        },
+        matches,
+      });
+    } catch (error: any) {
+      return res.status(500).json({
+        error: error.message || 'Failed to get round matches'
+      });
+    }
+  });
+
+  /**
+   * Get all rounds (paginated)
+   * GET /api/game/rounds
+   * Query params: ?limit=100&offset=0&seasonId=1
+   */
+  app.get('/api/game/rounds', async (req, res) => {
+    try {
+      const { limit = '100', offset = '0', seasonId } = req.query;
+
+      let roundsData;
+
+      if (seasonId) {
+        // Get rounds for specific season
+        roundsData = await storage.getRoundsBySeason(seasonId as string);
+      } else {
+        // Get all rounds with pagination
+        roundsData = await storage.getAllRounds(parseInt(limit as string), parseInt(offset as string));
+      }
+
+      console.log(roundsData);
+      return res.json(roundsData);
+    } catch (error: any) {
+      return res.status(500).json({
+        error: error.message || 'Failed to get rounds'
+      });
+    }
+  });
+
+  /**
+   * Get specific round details
+   * GET /api/game/rounds/:roundId
+   */
+  app.get('/api/game/rounds/:roundId', async (req, res) => {
+    try {
+      const { roundId } = req.params;
+
+      const round = await storage.getRoundById(roundId);
+      if (!round) {
+        return res.status(404).json({
+          error: 'Round not found'
+        });
+      }
+
+      const now = Date.now();
+      const endTime = round.endTime?.getTime() || 0;
+      const timeRemainingMs = Math.max(0, endTime - now);
+
+      return res.json({
+        ...round,
+        timeRemainingMs,
+        isActive: round.isActive && timeRemainingMs > 0,
+      });
+    } catch (error: any) {
+      return res.status(500).json({
+        error: error.message || 'Failed to get round'
+      });
+    }
+  });
+
+  // ============ Points System Routes ============
+  // IMPORTANT: More specific routes must come BEFORE parameterized routes
+
+  /**
+   * Get leaderboard
+   * GET /api/points/leaderboard
+   * Query params: ?limit=100
+   */
+  app.get('/api/points/leaderboard', async (req, res) => {
+    try {
+      const { limit = '100' } = req.query;
+
+      const leaderboard = await storage.getLeaderboard(parseInt(limit as string));
+
+      return res.json(leaderboard);
+    } catch (error: any) {
+      return res.status(500).json({
+        error: error.message || 'Failed to get leaderboard'
+      });
+    }
+  });
+
+  /**
+   * Get user's points history
+   * GET /api/points/:address/history
+   * Query params: ?limit=50
+   */
+  app.get('/api/points/:address/history', async (req, res) => {
+    try {
+      const { address } = req.params;
+      const { limit = '50' } = req.query;
+
+      if (!address || !address.match(/^0x[a-fA-F0-9]{40}$/)) {
+        return res.status(400).json({ error: 'Invalid Ethereum address' });
+      }
+
+      const history = await storage.getPointsHistory(address, parseInt(limit as string));
+
+      return res.json(history);
+    } catch (error: any) {
+      return res.status(500).json({
+        error: error.message || 'Failed to get points history'
+      });
+    }
+  });
+
+  /**
+   * Get user's points and stats
+   * GET /api/points/:address
+   */
+  app.get('/api/points/:address', async (req, res) => {
+    try {
+      const { address } = req.params;
+
+      if (!address || !address.match(/^0x[a-fA-F0-9]{40}$/)) {
+        return res.status(400).json({ error: 'Invalid Ethereum address' });
+      }
+
+      let userPoints = await storage.getUserPoints(address);
+
+      // Initialize if doesn't exist
+      if (!userPoints) {
+        userPoints = await storage.initializeUserPoints(address);
+      }
+
+      return res.json(userPoints);
+    } catch (error: any) {
+      return res.status(500).json({
+        error: error.message || 'Failed to get user points'
+      });
+    }
+  });
+
+  /**
+   * Get round results with matches and all bets
+   * GET /api/game/rounds/:roundId/results
+   */
+  app.get('/api/game/rounds/:roundId/results', async (req, res) => {
+    try {
+      const { roundId } = req.params;
+
+      // Get round details
+      const round = await storage.getRoundById(roundId);
+      if (!round) {
+        return res.status(404).json({
+          error: 'Round not found'
+        });
+      }
+
+      // Get all matches for this round
+      const matches = await storage.getMatchesByRound(roundId);
+
+      // Get all bets for this round
+      const allBets = await storage.getBetsByRound(roundId);
+
+      // Format bets with parsed JSON fields
+      const formattedBets = allBets.map((bet: any) => ({
+        ...bet,
+        matchIndices: JSON.parse(bet.matchIndices),
+        outcomes: JSON.parse(bet.outcomes),
+      }));
+
+      // Calculate statistics
+      const totalBets = formattedBets.length;
+      const totalVolume = formattedBets.reduce((sum: bigint, bet: any) => sum + BigInt(bet.amount), BigInt(0));
+      const wonBets = formattedBets.filter((b: any) => b.status === 'won' || b.status === 'claimed').length;
+      const lostBets = formattedBets.filter((b: any) => b.status === 'lost').length;
+      const pendingBets = formattedBets.filter((b: any) => b.status === 'pending').length;
+
+      return res.json({
+        round: {
+          roundId: round.roundId,
+          seasonId: round.seasonId,
+          startTime: round.startTime,
+          endTime: round.endTime,
+          vrfFulfilled: !!round.vrfFulfilledAt,
+          settled: round.settled,
+        },
+        matches,
+        bets: formattedBets,
+        statistics: {
+          totalBets,
+          totalVolume: totalVolume.toString(),
+          wonBets,
+          lostBets,
+          pendingBets,
+        },
+      });
+    } catch (error: any) {
+      return res.status(500).json({
+        error: error.message || 'Failed to get round results'
       });
     }
   });

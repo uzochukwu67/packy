@@ -140,7 +140,7 @@ export function formatToken(amount: bigint, decimals = 18): string {
   const fractionStr = fraction.toString().padStart(decimals, '0');
   const trimmed = fractionStr.replace(/0+$/, '');
 
-  return `${whole}.${trimmed}`;
+  return `${Number(whole).toFixed(3)}`;
 }
 
 /**

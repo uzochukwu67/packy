@@ -4,8 +4,10 @@ import { useToast } from '@/hooks/use-toast';
 export type BetSelection = {
   id: string; // unique ID for the selection
   matchId: string;
+  matchIndex: number; // 0-9 for contract
   matchTitle: string;
-  selection: string; // e.g. "Team A", "Draw", "Team B"
+  selection: string; // e.g. "Home", "Draw", "Away"
+  outcome: 1 | 2 | 3; // 1=HOME_WIN, 2=AWAY_WIN, 3=DRAW for contract
   odds: number;
 };
 

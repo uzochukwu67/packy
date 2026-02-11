@@ -6,16 +6,36 @@
 import { createWalletClient, createPublicClient, http } from 'viem';
 import { sepolia } from 'viem/chains';
 import { privateKeyToAccount } from 'viem/accounts';
+import dotenv from 'dotenv';
+dotenv.config();
 
-// Contract addresses on Sepolia
+// Contract addresses on Sepolia (NEW PROTOCOL - February 10, 2026)
+// Protocol-backed model with bounty system and referrals
 export const CONTRACTS = {
-  leagueToken: '0x0954D38B6d2D0B08B3Fa5c15e70e1c83aa536b4b' as const,
-  gameEngine: '0x50aE313D59bfB2A651fD99e91e963Cdd2AfA4eDF' as const,
-  liquidityPool: '0x052c1fE33D0EBB6642f73F7f8D66Defc0f7C9Fbe' as const,
-  bettingPool: '0x47Efc157C738B0AcB31bb37c8c77D73F831Fd441' as const,
-  seasonPredictor: '0xf0960b01251c8be7D1E3Fc1758c46E714e6Bf035' as const,
+  // Core contracts
+  leagueBetToken: '0x31A88b2D9e74975C2cf588838d321f6beE1EaD38' as const,
+  gameCore: '0x00cCb4D8b93A6d71728fF252B601E442D2734445' as const,
+  bettingCore: '0xf0939C708EaB36A20d84C073a799a86cbc5D1F96' as const,
+  bettingRouter: '0x9E612B5E6808961BF284Caa95c593627187F92Ab' as const,
+
+  // Periphery
+  seasonPredictor: '0xa80E492B3edB7e53eebA4b9d6DE1Aa938d03910B' as const,
+  swapRouter: '0x0E79e6A32E5B5535a3d75932a57aa55Aa4173ca0' as const,
+  tokenRegistry: '0xd133779BAfA817C770FdE6b421e2D1618183929A' as const,
+
+  // Treasury
+  treasury: '0x05f463129c9ce4Efb331c45b2F1A6a8E095c790D' as const,
 } as const;
 
+// === DEPLOYMENT SUMMARY ===
+//   LeagueBetToken: 0x31A88b2D9e74975C2cf588838d321f6beE1EaD38
+//   GameCore: 0x00cCb4D8b93A6d71728fF252B601E442D2734445
+//   BettingCore: 0xf0939C708EaB36A20d84C073a799a86cbc5D1F96
+//   BettingRouter: 0x9E612B5E6808961BF284Caa95c593627187F92Ab
+//   SeasonPredictor: 0xa80E492B3edB7e53eebA4b9d6DE1Aa938d03910B
+//   SwapRouter: 0x0E79e6A32E5B5535a3d75932a57aa55Aa4173ca0
+//   TokenRegistry: 0xd133779BAfA817C770FdE6b421e2D1618183929A
+//   Treasury: 0x05f463129c9ce4Efb331c45b2F1A6a8E095c790D
 // Get admin private key from environment
 const ADMIN_PRIVATE_KEY = process.env.ADMIN_PRIVATE_KEY as `0x${string}`;
 
@@ -42,10 +62,10 @@ export const walletClient = createWalletClient({
   transport: http(RPC_URL),
 });
 
-// Faucet configuration
+// Faucet configuration (LBT tokens)
 export const FAUCET_CONFIG = {
   // Amount to send per request (in ether)
-  FAUCET_AMOUNT: BigInt(1000 * 10 ** 18), // 1000 LEAGUE tokens
+  FAUCET_AMOUNT: BigInt(1000 * 10 ** 18), // 1000 LBT tokens
 
   // Cooldown period (1 hour)
   COOLDOWN_MS: 60 * 60 * 1000,
@@ -54,13 +74,46 @@ export const FAUCET_CONFIG = {
   MAX_DAILY_REQUESTS: 5,
 };
 
+// Referral system configuration
+export const REFERRAL_CONFIG = {
+  // Referral bonus (% of bet amount in basis points)
+  REFERRER_BONUS_BPS: 500, // 5% of bet amount
+
+  // Referee bonus (first-time bettor bonus)
+  REFEREE_BONUS: BigInt(100 * 10 ** 18), // 100 LBT tokens
+
+  // Maximum referral bonus per transaction
+  MAX_REFERRAL_BONUS: BigInt(50 * 10 ** 18), // 50 LBT max per bet
+
+  // Minimum bet amount to qualify for referral
+  MIN_BET_FOR_REFERRAL: BigInt(10 * 10 ** 18), // 10 LBT minimum
+};
+
+// Bounty system configuration
+export const BOUNTY_CONFIG = {
+  // Minimum payout for bounty claims
+  MIN_BOUNTY_CLAIM: BigInt(50 * 10 ** 18), // 50 LBT
+
+  // Bounty percentage (basis points)
+  BOUNTY_PERCENTAGE_BPS: 1000, // 10%
+
+  // Claim deadline after settlement
+  CLAIM_DEADLINE_HOURS: 24,
+
+  // Sweep grace period after claim deadline
+  SWEEP_GRACE_PERIOD_HOURS: 6,
+
+  // Late claim fee (after sweep)
+  LATE_CLAIM_FEE_BPS: 1500, // 15%
+};
+
 // Game monitoring intervals
 export const MONITORING_CONFIG = {
   // Check game state every 30 seconds
   POLL_INTERVAL_MS: 30 * 1000,
 
-  // Round duration from contract (15 minutes)
-  ROUND_DURATION_MS: 15 * 60 * 1000,
+  // Round duration from contract (3 hours - UPDATED in V2.5)
+  ROUND_DURATION_MS: 3 * 60 * 60 * 1000,
 
   // Auto-settle delay after VRF request (5 minutes)
   VRF_SETTLEMENT_DELAY_MS: 5 * 60 * 1000,

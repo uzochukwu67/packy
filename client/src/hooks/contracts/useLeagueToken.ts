@@ -4,6 +4,7 @@
  */
 
 import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { sepolia } from 'wagmi/chains';
 import { DEPLOYED_ADDRESSES } from '@/contracts/addresses';
 import { formatUnits } from 'viem';
 import LeagueTokenABI from '@/abis/League.json';
@@ -17,6 +18,7 @@ export function useLeagueBalance(address: `0x${string}` | undefined) {
     abi: LeagueTokenABI,
     functionName: 'balanceOf',
     args: address ? [address] : undefined,
+    chainId: sepolia.id,
     query: {
       enabled: !!address,
       refetchInterval: 10000, // Refetch every 10 seconds
@@ -44,6 +46,23 @@ export function useLeagueAllowance(owner: `0x${string}` | undefined) {
     abi: LeagueTokenABI,
     functionName: 'allowance',
     args: owner ? [owner, DEPLOYED_ADDRESSES.bettingPool] : undefined,
+    chainId: sepolia.id,
+    query: {
+      enabled: !!owner,
+    },
+  });
+}
+
+/**
+ * Get allowance for LiquidityPool contract
+ */
+export function useLeagueAllowanceForLP(owner: `0x${string}` | undefined) {
+  return useReadContract({
+    address: DEPLOYED_ADDRESSES.leagueToken,
+    abi: LeagueTokenABI,
+    functionName: 'allowance',
+    args: owner ? [owner, DEPLOYED_ADDRESSES.liquidityPool] : undefined,
+    chainId: sepolia.id,
     query: {
       enabled: !!owner,
     },
@@ -55,7 +74,7 @@ export function useLeagueAllowance(owner: `0x${string}` | undefined) {
  */
 export function useApproveLeague() {
   const { writeContract, data: hash, ...rest } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { isLoading: isConfirming, isSuccess, isPending } = useWaitForTransactionReceipt({ hash });
 
   const approve = (amount: bigint) => {
     writeContract({
@@ -71,6 +90,33 @@ export function useApproveLeague() {
     hash,
     isConfirming,
     isSuccess,
+    isPending,
+    ...rest,
+  };
+}
+
+/**
+ * Approve LEAGUE tokens for LiquidityPool contract
+ */
+export function useApproveLeagueForLP() {
+  const { writeContract, data: hash, ...rest } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess, isPending } = useWaitForTransactionReceipt({ hash });
+
+  const approve = (amount: bigint) => {
+    writeContract({
+      address: DEPLOYED_ADDRESSES.leagueToken,
+      abi: LeagueTokenABI,
+      functionName: 'approve',
+      args: [DEPLOYED_ADDRESSES.liquidityPool, amount],
+    });
+  };
+
+  return {
+    approve,
+    hash,
+    isConfirming,
+    isSuccess,
+    isPending,
     ...rest,
   };
 }
