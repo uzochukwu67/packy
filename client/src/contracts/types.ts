@@ -12,15 +12,12 @@ export enum MatchOutcome {
 }
 
 export type Match = {
-  homeTeamId: bigint;
-  awayTeamId: bigint;
+  homeTeamId: number;
+  awayTeamId: number;
   homeScore: number;
   awayScore: number;
   outcome: MatchOutcome;
   settled: boolean;
-  homeOdds: bigint;
-  awayOdds: bigint;
-  drawOdds: bigint;
 };
 
 export type Team = {
@@ -37,6 +34,7 @@ export type Season = {
   seasonId: bigint;
   startTime: bigint;
   currentRound: bigint;
+  totalRounds: bigint;
   active: boolean;
   completed: boolean;
   winningTeamId: bigint;
@@ -46,12 +44,10 @@ export type Round = {
   roundId: bigint;
   seasonId: bigint;
   startTime: bigint;
+  endTime: bigint;
   vrfRequestId: bigint;
+  resultsRequested: boolean;
   settled: boolean;
-  matches: readonly [
-    Match, Match, Match, Match, Match,
-    Match, Match, Match, Match, Match
-  ];
 };
 
 // ============ BettingPool Types ============
@@ -61,30 +57,40 @@ export type MatchPool = {
   awayWinPool: bigint;
   drawPool: bigint;
   totalPool: bigint;
+  homeBetAmount: bigint;
+  awayBetAmount: bigint;
+  drawBetAmount: bigint;
 };
 
 export type Prediction = {
-  matchIndex: bigint;
+  matchIndex: number;
   predictedOutcome: number; // 1=HOME_WIN, 2=AWAY_WIN, 3=DRAW
-  amountInPool: bigint;
 };
+
+export enum BetStatus {
+  Active = 0,
+  Won = 1,
+  Lost = 2,
+  Cancelled = 3,
+  Claimed = 4
+}
 
 export type Bet = {
   bettor: `0x${string}`;
-  roundId: bigint;
+  token: `0x${string}`;
   amount: bigint;
-  bonus: bigint;
-  predictions: Prediction[];
-  settled: boolean;
-  claimed: boolean;
+  potentialPayout: bigint;
+  lockedMultiplier: bigint;
+  roundId: bigint;
+  timestamp: number;
+  legCount: number;
+  status: BetStatus;
 };
 
 export type RoundAccounting = {
   totalBetVolume: bigint;
-  totalReservedForWinners: bigint;
-  protocolRevenueShare: bigint;
-  seasonRevenueShare: bigint;
-  parlayCount: bigint;
+  parlayCount: number;
+  totalBets: number;
 };
 
 // ============ Frontend Helper Types ============
@@ -133,7 +139,7 @@ export function formatToken(amount: bigint, decimals = 18): string {
   const whole = amount / divisor;
   const fraction = amount % divisor;
 
-  if (fraction === 0n) {
+  if (fraction === BigInt(0)) {
     return whole.toString();
   }
 

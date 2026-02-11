@@ -1,33 +1,64 @@
 import { MatchCard } from "@/components/ui/MatchCard";
 import { Loader2, AlertCircle, RefreshCw, Trophy, Target, Clock } from "lucide-react";
-import { useDashboardData } from "@/hooks/contracts/useGameCore";
+import { useCurrentSeason, useCurrentRound, useCurrentSeasonData, useRoundMatches } from "@/hooks/contracts/useGameCore";
 import { useGameState } from "@/hooks/useGameState";
-import type { Match } from "@/contracts/types";
+import type { Match } from "@/hooks/contracts/useGameCore";
 import { useChainId } from "wagmi";
 import { useEffect, useState } from "react";
+import { useCurrentRound as useBettingRound, useRoundInfo, formatLBT } from "@/hooks/contracts/useBettingCore";
 
 export default function Dashboard() {
   // Fetch real-time blockchain data
-  const chainId = useChainId()
-  const { seasonId, roundId, season, round, matches, isSettled, isLoading, isError, refetch } = useDashboardData();
+  const chainId = useChainId();
+
+  // GameCore hooks
+  const { data: seasonId, refetch: refetchSeason } = useCurrentSeason();
+  const { data: gameRoundId, refetch: refetchRoundId } = useCurrentRound();
+  const { data: season, isLoading: seasonLoading } = useCurrentSeasonData();
+
+  // BettingCore hooks (pool stats & metadata for countdown)
+  const { data: bettingRoundId, refetch: refetchBettingRound } = useBettingRound();
+
+  // Use BettingCore's round ID as primary, fallback to GameCore
+  const roundId = bettingRoundId !== undefined ? bettingRoundId : gameRoundId;
+
+  const { data: matches, isLoading: matchesLoading, refetch: refetchMatches } = useRoundMatches(roundId as bigint | undefined);
+  const { pool, metadata, isLoading: bettingLoading } = useRoundInfo(roundId as bigint | undefined);
+
   const { data: gameState } = useGameState();
+
+  const isLoading = seasonLoading || matchesLoading || bettingLoading;
+  const isError = roundId === undefined; // Basic error state if no roundId is found at all
+  const isSettled = metadata?.settled; // Using BettingCore settlement status
+
+
+  const refetchGame = () => {
+    refetchSeason();
+    refetchRoundId();
+    refetchBettingRound();
+    refetchMatches();
+  };
 
   // Local state for countdown timers
   const [nextRoundCountdown, setNextRoundCountdown] = useState<string>('');
   const [bettingCountdown, setBettingCountdown] = useState<string>('');
   const [isBettingActive, setIsBettingActive] = useState<boolean>(true);
 
+
   // Calculate betting period status based on round start time
   useEffect(() => {
-    if (!round?.startTime) {
+
+    if (!metadata?.roundStartTime) {
       setBettingCountdown('');
       setIsBettingActive(true);
       return;
     }
 
-    const ROUND_DURATION_MS = 3 * 60 * 60 * 1000; // 3 hours (V2.5 update)
-    const roundStartTime = Number(round.startTime) * 1000; // Convert to milliseconds
-    const roundEndTime = roundStartTime + ROUND_DURATION_MS;
+    const roundStartTimeStr = metadata.roundStartTime.toString();
+    const roundEndTimeStr = metadata.roundEndTime.toString();
+
+    const roundStartTime = Number(roundStartTimeStr) * 1000;
+    const roundEndTime = Number(roundEndTimeStr) * 1000;
 
     const updateBettingStatus = () => {
       const now = Date.now();
@@ -48,7 +79,7 @@ export default function Dashboard() {
     updateBettingStatus();
     const interval = setInterval(updateBettingStatus, 1000);
     return () => clearInterval(interval);
-  }, [round?.startTime]);
+  }, [metadata?.roundStartTime, metadata?.roundEndTime]);
 
   // Update next round countdown
   useEffect(() => {
@@ -90,20 +121,20 @@ export default function Dashboard() {
   }
 
   // Error state
-  if (isError || !roundId || roundId === 0n) {
+  if (isError || roundId === undefined) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center max-w-md">
           <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
           <h3 className="text-lg font-bold text-gray-900 mb-2">Unable to Load Matches</h3>
           <p className="text-gray-600 mb-4">
-            {!roundId || roundId === 0n
+            {roundId === undefined
               ? "No active round found. Please wait for the admin to start a new round."
               : "There was an error connecting to the blockchain. Please check your wallet connection."
             }
           </p>
           <button
-            onClick={() => refetch()}
+            onClick={() => refetchGame()}
             className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl hover:bg-primary/90 transition-colors"
           >
             <RefreshCw className="w-4 h-4" />
@@ -154,6 +185,14 @@ export default function Dashboard() {
                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Matches</p>
                 <p className="text-2xl font-bold text-gray-900">{matches?.length || 0}</p>
               </div>
+              <div className="bg-white rounded-xl p-3 shadow-sm border border-primary/10">
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Pool</p>
+                <p className="text-2xl font-bold text-green-600">{formatLBT(pool?.totalLocked)} <span className="text-xs font-normal text-gray-400">LBT</span></p>
+              </div>
+              <div className="bg-white rounded-xl p-3 shadow-sm border border-primary/10">
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Remaining</p>
+                <p className="text-2xl font-bold text-blue-600">{formatLBT(pool?.remaining)} <span className="text-xs font-normal text-gray-400">LBT</span></p>
+              </div>
             </div>
             <div className="flex items-center gap-2">
               {(isSettled as boolean) ? (
@@ -198,12 +237,12 @@ export default function Dashboard() {
         {/* Refresh Button */}
         <div className="flex gap-3">
           <button
-            onClick={() => refetch()}
+            onClick={() => refetchGame()}
             className="flex items-center gap-2 px-4 py-2 bg-white border border-border rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
           >
-            
+
             <RefreshCw className="w-4 h-4" />
-            Refresh Odds
+            Refresh Odds & Pool
           </button>
         </div>
       </div>
@@ -254,8 +293,9 @@ export default function Dashboard() {
         {matches && matches.length > 0 ? (
           matches.map((match: Match, index: number) => (
             <MatchCard
-              key={`${roundId}-${index}`}
-              roundId={roundId}
+              key={`${roundId.toString()}-${index}`}
+              roundId={roundId as bigint}
+
               matchIndex={index}
               match={match}
               startTime={bettingCountdown || "Live"}

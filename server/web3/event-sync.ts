@@ -88,21 +88,30 @@ export async function syncRoundStart(roundId: bigint, seasonId: bigint, startTim
     });
 
     // Save matches with their initial state
-    const matchRecords = matches.map((match: any, index: number) => ({
-      roundId: roundId.toString(),
-      matchIndex: index,
-      homeTeamId: Number(match.homeTeamId),
-      awayTeamId: Number(match.awayTeamId),
-      homeTeamName: getTeamName(Number(match.homeTeamId)),
-      awayTeamName: getTeamName(Number(match.awayTeamId)),
-      homeScore: match.homeScore ? Number(match.homeScore) : null,
-      awayScore: match.awayScore ? Number(match.awayScore) : null,
-      homeOdds: match.homeOdds?.toString(),
-      awayOdds: match.awayOdds?.toString(),
-      drawOdds: match.drawOdds?.toString(),
-      outcome: getOutcome(Number(match.outcome)),
-      settled: false,
-    }));
+    const matchRecords = matches.map((m: any, index: number) => {
+      const homeTeamId = Number(m.homeTeamId ?? m[0]);
+      const awayTeamId = Number(m.awayTeamId ?? m[1]);
+      const homeScore = m.homeScore ?? m[2];
+      const awayScore = m.awayScore ?? m[3];
+      const outcome = m.outcome ?? m[4];
+      const settled = m.settled ?? m[5];
+
+      return {
+        roundId: roundId.toString(),
+        matchIndex: index,
+        homeTeamId,
+        awayTeamId,
+        homeTeamName: getTeamName(homeTeamId),
+        awayTeamName: getTeamName(awayTeamId),
+        homeScore: homeScore !== undefined ? Number(homeScore) : null,
+        awayScore: awayScore !== undefined ? Number(awayScore) : null,
+        homeOdds: m.homeOdds?.toString(),
+        awayOdds: m.awayOdds?.toString(),
+        drawOdds: m.drawOdds?.toString(),
+        outcome: getOutcome(Number(outcome)),
+        settled: !!settled,
+      };
+    });
 
     await storage.saveMatches(matchRecords);
 
@@ -136,13 +145,18 @@ export async function syncVRFFulfilled(requestId: bigint, roundId: bigint) {
 
     // Update each match with scores and outcomes
     for (let i = 0; i < matches.length; i++) {
-      const match = matches[i];
+      const m = matches[i];
+      const homeScore = Number(m.homeScore ?? m[2]);
+      const awayScore = Number(m.awayScore ?? m[3]);
+      const outcome = Number(m.outcome ?? m[4]);
+      const settled = (m.settled ?? m[5]) as boolean;
+
       await storage.updateMatch(roundId.toString(), i, {
-        homeScore: Number(match.homeScore),
-        awayScore: Number(match.awayScore),
-        outcome: getOutcome(Number(match.outcome)),
-        settled: match.settled,
-        settledAt: match.settled ? new Date() : undefined,
+        homeScore,
+        awayScore,
+        outcome: getOutcome(outcome),
+        settled,
+        settledAt: settled ? new Date() : undefined,
       });
     }
 
@@ -532,13 +546,18 @@ export async function manualSyncRound(roundId: bigint) {
 
     // Update all matches
     for (let i = 0; i < matches.length; i++) {
-      const match = matches[i];
+      const m = matches[i];
+      const homeScore = Number(m.homeScore ?? m[2]);
+      const awayScore = Number(m.awayScore ?? m[3]);
+      const outcome = Number(m.outcome ?? m[4]);
+      const settled = (m.settled ?? m[5]) as boolean;
+
       await storage.updateMatch(roundId.toString(), i, {
-        homeScore: Number(match.homeScore),
-        awayScore: Number(match.awayScore),
-        outcome: getOutcome(Number(match.outcome)),
-        settled: match.settled,
-        settledAt: match.settled ? new Date() : undefined,
+        homeScore,
+        awayScore,
+        outcome: getOutcome(outcome),
+        settled,
+        settledAt: settled ? new Date() : undefined,
       });
     }
 

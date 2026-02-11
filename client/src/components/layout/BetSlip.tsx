@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
 import { useAccount, usePublicClient } from "wagmi";
 import { useToast } from "@/hooks/use-toast";
-import { usePlaceBet } from "@/hooks/contracts/useBettingCore";
+import { usePlaceBet, useCurrentRound as useBettingRound } from "@/hooks/contracts/useBettingCore";
 import { useCurrentRound, useCurrentSeason } from "@/hooks/contracts/useGameCore";
 import { useLeagueAllowance, useApproveLeague } from "@/hooks/contracts/useLeagueToken";
 import { parseToken, formatToken, formatOdds } from "@/contracts/types";
@@ -19,8 +19,12 @@ export function BetSlip() {
   const publicClient = usePublicClient();
 
   // Get current round and season
-  const { data: roundId } = useCurrentRound();
+  const { data: gameRoundId } = useCurrentRound();
+  const { data: bettingRoundId } = useBettingRound();
   const { data: seasonId } = useCurrentSeason();
+
+  // Prioritize BettingCore round ID
+  const roundId = bettingRoundId !== undefined ? bettingRoundId : gameRoundId;
 
   // Check token allowance
   const { data: allowance, refetch: refetchAllowance } = useLeagueAllowance(address);
@@ -84,7 +88,7 @@ export function BetSlip() {
     let hasRun = false;
 
     const saveBetToDatabase = async () => {
-      if (hasRun || !publicClient || !address || !seasonId || !roundId) return;
+      if (hasRun || !publicClient || !address || seasonId === undefined || roundId === undefined) return;
       hasRun = true;
 
       try {
@@ -277,8 +281,8 @@ export function BetSlip() {
                     approvePending || isApproving
                       ? "bg-gray-400"
                       : approveSuccess
-                      ? "bg-green-500"
-                      : "bg-blue-500 hover:bg-blue-600 shadow-blue-500/20"
+                        ? "bg-green-500"
+                        : "bg-blue-500 hover:bg-blue-600 shadow-blue-500/20"
                   )}
                 >
                   {approvePending || isApproving ? (
@@ -304,8 +308,8 @@ export function BetSlip() {
                     isPending || isConfirming
                       ? "bg-gray-400"
                       : isSuccess
-                      ? "bg-green-500"
-                      : "bg-primary hover:bg-primary/90 shadow-primary/20"
+                        ? "bg-green-500"
+                        : "bg-primary hover:bg-primary/90 shadow-primary/20"
                   )}
                 >
                   {isPending && (

@@ -1,10 +1,10 @@
 import { useBetSlip } from "@/context/BetSlipContext";
 import { cn } from "@/lib/utils";
 import { Users, Loader2 } from "lucide-react";
-import { useLockedOdds } from "@/hooks/contracts/useBettingCore";
-import { useTeam } from "@/hooks/contracts/useGameCore";
-import { formatOdds } from "@/contracts/types";
-import type { Match } from "@/contracts/types";
+import { useLockedOdds, formatOdds as formatOddsStr } from "@/hooks/contracts/useBettingCore";
+import { useMatchWithTeams } from "@/hooks/contracts/useGameCore";
+import { formatOdds as formatOddsNum } from "@/contracts/types";
+import type { Match } from "@/hooks/contracts/useGameCore";
 
 interface MatchCardProps {
   roundId: bigint;
@@ -17,28 +17,19 @@ interface MatchCardProps {
 export function MatchCard({ roundId, matchIndex, match, startTime, bettingDisabled = false }: MatchCardProps) {
   const { addBet, bets } = useBetSlip();
 
-  // Fetch locked odds from blockchain (fixed at seeding time)
+  // Fetch match, teams, and status from GameCore
+  const { match: matchData, homeTeam, awayTeam, isLoading: matchLoading } = useMatchWithTeams(roundId, matchIndex);
+
+  // Fetch locked odds from BettingCore
   const { data: oddsData, isLoading: oddsLoading, error: oddsError } = useLockedOdds(roundId, matchIndex);
 
-  // Fetch team names
-  const { data: homeTeam } = useTeam(Number(match.homeTeamId));
-  const { data: awayTeam } = useTeam(Number(match.awayTeamId));
+  const isLoading = matchLoading || oddsLoading;
 
-  // Debug: Log odds data for first match
-  if (matchIndex === 0 && (oddsData || oddsError)) {
-    console.log('Match 0 odds:', {
-      roundId: roundId?.toString(),
-      matchIndex,
-      oddsData,
-      oddsError,
-      raw: oddsData ? [oddsData[0]?.toString(), oddsData[1]?.toString(), oddsData[2]?.toString(), oddsData[3]] : null
-    });
-  }
 
-  // Parse odds from contract (returns [homeOdds, awayOdds, drawOdds, locked] as bigints)
-  const homeOdds = oddsData ? formatOdds(oddsData[0]) : 0;
-  const awayOdds = oddsData ? formatOdds(oddsData[1]) : 0;
-  const drawOdds = oddsData ? formatOdds(oddsData[2]) : 0;
+  // Parse odds from contract (returns LockedOdds object)
+  const homeOdds = formatOddsNum(oddsData?.homeOdds || BigInt(0));
+  const awayOdds = formatOddsNum(oddsData?.awayOdds || BigInt(0));
+  const drawOdds = formatOddsNum(oddsData?.drawOdds || BigInt(0));
 
   const matchId = `${roundId}-${matchIndex}`;
   const teamA = homeTeam?.name || `Team ${match.homeTeamId}`;
@@ -60,6 +51,10 @@ export function MatchCard({ roundId, matchIndex, match, startTime, bettingDisabl
     });
   };
 
+  // Use matchData if available, otherwise fallback to props
+  const currentMatch = matchData || match;
+  const isSettled = currentMatch?.settled;
+
   return (
     <div className="bg-white rounded-2xl p-5 border border-border shadow-sm hover:shadow-md transition-shadow duration-300 mb-4">
       <div className="flex justify-between items-center mb-4">
@@ -80,6 +75,9 @@ export function MatchCard({ roundId, matchIndex, match, startTime, bettingDisabl
               </div>
               <span className="font-bold text-gray-900 text-lg">{teamA}</span>
             </div>
+            {isSettled && (
+              <span className="text-2xl font-bold text-primary">{currentMatch.homeScore}</span>
+            )}
           </div>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -88,6 +86,9 @@ export function MatchCard({ roundId, matchIndex, match, startTime, bettingDisabl
               </div>
               <span className="font-bold text-gray-900 text-lg">{teamB}</span>
             </div>
+            {isSettled && (
+              <span className="text-2xl font-bold text-primary">{currentMatch.awayScore}</span>
+            )}
           </div>
         </div>
 
@@ -133,17 +134,17 @@ export function MatchCard({ roundId, matchIndex, match, startTime, bettingDisabl
 
           <button
             onClick={() => handleSelect("Away", awayOdds, 2)}
-            disabled={oddsLoading || match.settled || bettingDisabled}
+            disabled={isLoading || isSettled || bettingDisabled}
             className={cn(
               "flex flex-col items-center justify-center py-3 px-2 rounded-xl border transition-all duration-200",
               isSelected("Away")
                 ? "bg-primary text-white border-primary shadow-lg shadow-primary/20 scale-[1.02]"
                 : "bg-gray-50 border-gray-200 text-gray-700 hover:border-primary/50 hover:bg-white",
-              (oddsLoading || match.settled || bettingDisabled) && "opacity-50 cursor-not-allowed"
+              (isLoading || isSettled || bettingDisabled) && "opacity-50 cursor-not-allowed"
             )}
           >
             <span className={cn("text-xs mb-1", isSelected("Away") ? "text-white/80" : "text-gray-400")}>2</span>
-            {oddsLoading ? (
+            {isLoading ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               <span className="font-bold font-mono text-lg">{awayOdds.toFixed(2)}</span>

@@ -3,15 +3,15 @@ import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
 import { useAccount } from "wagmi";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
-  useSeasonPrizePool, 
-  useMakePrediction, 
+import {
+  useSeasonPrizePool,
+  useMakePrediction,
   useUserPrediction,
   useCanClaimPrize,
   useClaimPrize,
   usePredictionDistribution
 } from "@/hooks/contracts/useSeasonPredictor";
-import { useCurrentSeason, useTeam, useSeason } from "@/hooks/contracts/useGameCore";
+import { useCurrentSeason, useTeam, useCurrentSeasonData } from "@/hooks/contracts/useGameCore";
 import { formatToken } from "@/contracts/types";
 import { useToast } from "@/hooks/use-toast";
 
@@ -22,7 +22,7 @@ export default function Season() {
 
   // Get current season data
   const { data: seasonId } = useCurrentSeason();
-  const { data: season } = useSeason(seasonId);
+  const { data: season } = useCurrentSeasonData();
   const { data: prizePool } = useSeasonPrizePool(seasonId);
   const { data: userPrediction } = useUserPrediction(seasonId, address);
   const { data: canClaimData } = useCanClaimPrize(seasonId, address);
@@ -40,7 +40,7 @@ export default function Season() {
   const predictionsLocked = season ? Number(season.currentRound) > 0 : false;
 
   // Parse user prediction (returns type(uint256).max if no prediction)
-  const hasPredicted = userPrediction !== undefined && userPrediction !== BigInt(2**256 - 1);
+  const hasPredicted = userPrediction !== undefined && userPrediction !== BigInt(2 ** 256 - 1);
   const predictedTeamId = hasPredicted ? Number(userPrediction) : null;
 
   // Set selected team from user's prediction
@@ -100,7 +100,7 @@ export default function Season() {
   };
 
   // Calculate total predictors
-  const totalPredictors = distribution 
+  const totalPredictors = distribution
     ? Array.from(distribution).reduce((sum, count) => sum + Number(count), 0)
     : 0;
 
@@ -110,7 +110,7 @@ export default function Season() {
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       {/* Hero Section */}
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-gray-900 via-gray-800 to-primary/20 p-8 md:p-12 text-white shadow-2xl"
@@ -118,21 +118,21 @@ export default function Season() {
         <div className="absolute top-0 right-0 p-12 opacity-10">
           <Trophy className="w-64 h-64 rotate-12" />
         </div>
-        
+
         <div className="relative z-10 max-w-2xl">
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.2 }}
             className="flex items-center gap-2 text-primary font-bold tracking-widest uppercase text-sm mb-4"
           >
-             <Star className="w-4 h-4" /> 
-             Season {seasonId ? seasonId.toString() : "..."}
-             {season?.active && (
-               <span className="ml-2 bg-green-500 text-white text-xs px-2 py-0.5 rounded-full">ACTIVE</span>
-             )}
+            <Star className="w-4 h-4" />
+            Season {seasonId ? seasonId.toString() : "..."}
+            {season?.active && (
+              <span className="ml-2 bg-green-500 text-white text-xs px-2 py-0.5 rounded-full">ACTIVE</span>
+            )}
           </motion.div>
-          <motion.h1 
+          <motion.h1
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.3 }}
@@ -140,7 +140,7 @@ export default function Season() {
           >
             Predict the Champion
           </motion.h1>
-          <motion.p 
+          <motion.p
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.4 }}
@@ -148,9 +148,9 @@ export default function Season() {
           >
             Lock in your prediction for the season winner. The prize pool accumulates until the final whistle. Correct predictions share the entire pot!
           </motion.p>
-          
+
           <div className="flex flex-wrap gap-6">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 0.5 }}
@@ -164,7 +164,7 @@ export default function Season() {
                 {prizePool ? formatToken(prizePool) : "0"} LEAGUE
               </p>
             </motion.div>
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 0.6 }}
@@ -221,7 +221,7 @@ export default function Season() {
           const predictorCount = distribution ? Number(distribution[teamId]) : 0;
           const isSelected = selectedTeam === teamId;
           const isPredicted = predictedTeamId === teamId;
-          
+
           return (
             <motion.div
               key={teamId}
@@ -234,8 +234,8 @@ export default function Season() {
                 isSelected
                   ? "border-primary ring-2 ring-primary/20 shadow-xl scale-105"
                   : isPredicted
-                  ? "border-blue-500 ring-2 ring-blue-500/20 shadow-lg"
-                  : "border-border hover:border-gray-300 hover:shadow-lg hover:-translate-y-1",
+                    ? "border-blue-500 ring-2 ring-blue-500/20 shadow-lg"
+                    : "border-border hover:border-gray-300 hover:shadow-lg hover:-translate-y-1",
                 (hasPredicted || predictionsLocked) && !isPredicted && "opacity-50 cursor-not-allowed"
               )}
             >
@@ -278,8 +278,8 @@ export default function Season() {
                   isSelected
                     ? "from-primary/10 to-primary/5 opacity-100"
                     : isPredicted
-                    ? "from-blue-500/10 to-blue-500/5 opacity-100"
-                    : "from-primary/5 to-transparent opacity-0 group-hover:opacity-100"
+                      ? "from-blue-500/10 to-blue-500/5 opacity-100"
+                      : "from-primary/5 to-transparent opacity-0 group-hover:opacity-100"
                 )}
               />
             </motion.div>
@@ -288,7 +288,7 @@ export default function Season() {
       </div>
 
       {/* Action Button */}
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="flex justify-end pt-4"
@@ -307,8 +307,8 @@ export default function Season() {
                 isClaiming
                   ? "bg-gray-400"
                   : claimSuccess
-                  ? "bg-green-500 shadow-green-500/25"
-                  : "bg-green-600 hover:bg-green-700 shadow-green-600/25"
+                    ? "bg-green-500 shadow-green-500/25"
+                    : "bg-green-600 hover:bg-green-700 shadow-green-600/25"
               )}
             >
               {isClaiming ? (
@@ -352,8 +352,8 @@ export default function Season() {
                 isPredicting
                   ? "bg-gray-400"
                   : predictSuccess
-                  ? "bg-green-500 shadow-green-500/25"
-                  : "bg-primary hover:bg-primary/90 shadow-primary/25"
+                    ? "bg-green-500 shadow-green-500/25"
+                    : "bg-primary hover:bg-primary/90 shadow-primary/25"
               )}
             >
               {isPredicting ? (

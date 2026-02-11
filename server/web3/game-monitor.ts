@@ -45,32 +45,57 @@ export async function getGameState(): Promise<GameState> {
 
     // Check round status if round exists
     if (currentRoundId > BigInt(0)) {
-      // Check if round is settled from database (more reliable than blockchain state)
+      // Fetch round info from blockchain for more accurate timing
+      const blockchainRound = await publicClient.readContract({
+        address: CONTRACTS.gameCore,
+        abi: GameCoreABI as any,
+        functionName: 'rounds',
+        args: [currentRoundId],
+      }) as any;
+
+      // Robust parsing for blockchainRound (array or object)
+      const blockchainEndTime = Number(blockchainRound.endTime ?? blockchainRound[3] ?? 0);
+      const blockchainVrfRequestId = BigInt(blockchainRound.vrfRequestId ?? blockchainRound[4] ?? 0);
+      const blockchainResultsRequested = (blockchainRound.resultsRequested ?? blockchainRound[5] ?? false) as boolean;
+      const blockchainSettled = (blockchainRound.settled ?? blockchainRound[6] ?? false) as boolean;
+
+      // Debug log to identify desyncs
+      log(`[DEBUG] Round ${currentRoundId} blockchain state: endTime=${blockchainEndTime}, vrfId=${blockchainVrfRequestId}, requested=${blockchainResultsRequested}, settled=${blockchainSettled}`);
+
+      // Check if round is settled from database (fallback)
       const dbRound = await storage.getRoundById(currentRoundId.toString());
+      roundSettled = blockchainSettled || (dbRound?.settled ?? false);
 
-      if (dbRound) {
-        roundSettled = dbRound.settled;
+      if (!roundSettled) {
+        // Calculate time until round end using blockchain endTime
+        const now = Math.floor(Date.now() / 1000);
+        timeUntilRoundEnd = Math.max(0, (blockchainEndTime - now) * 1000);
 
-        // Calculate time until round end
-        if (!roundSettled && dbRound.startTime) {
-          const roundStartTime = dbRound.startTime.getTime();
-          const roundEndTime = roundStartTime + MONITORING_CONFIG.ROUND_DURATION_MS;
-          timeUntilRoundEnd = Math.max(0, roundEndTime - Date.now());
+        // Should request VRF if round duration has elapsed and no VRF request yet
+        // A round is considered "requested" if resultsRequested is true OR vrfRequestId is set
+        const hasVrfRequest = (blockchainVrfRequestId > BigInt(0)) || blockchainResultsRequested || !!dbRound?.vrfRequestId;
 
-          // Should request VRF if round duration has elapsed and no VRF request yet
-          shouldRequestVRF = timeUntilRoundEnd === 0 && !dbRound.vrfRequestId;
+        // Critical: Only request VRF if endTime is in the past and not zero
+        shouldRequestVRF = blockchainEndTime > 0 && now >= blockchainEndTime && !hasVrfRequest;
 
-          // Should settle round if VRF fulfilled but not settled yet
-          if (dbRound.vrfRequestId && dbRound.vrfFulfilledAt && !roundSettled) {
+        if (shouldRequestVRF) {
+          log(`[DEBUG] triggering shouldRequestVRF: now=${now}, endTime=${blockchainEndTime}, hasVrfRequest=${hasVrfRequest}`);
+        }
+
+        // Should settle round if VRF fulfilled but not settled yet
+        if (hasVrfRequest && !roundSettled) {
+          // Check fulfillment on blockchain if needed, or rely on dbRound if sync is fast
+          if (dbRound?.vrfFulfilledAt || blockchainSettled) {
             shouldSettleRound = true;
           }
         }
+      }
 
-        // Calculate time until next round starts (if current round is settled)
-        if (roundSettled && dbRound.settledAt) {
-          const timeSinceSettlement = Date.now() - dbRound.settledAt.getTime();
-          timeUntilNextRound = Math.max(0, NEXT_ROUND_DELAY_MS - timeSinceSettlement);
-        }
+      // Calculate time until next round starts (if current round is settled)
+      if (roundSettled) {
+        const settledAt = dbRound?.settledAt?.getTime() || (blockchainEndTime * 1000);
+        const timeSinceSettlement = Date.now() - settledAt;
+        timeUntilNextRound = Math.max(0, NEXT_ROUND_DELAY_MS - timeSinceSettlement);
       }
     }
 
@@ -132,7 +157,10 @@ export async function startRound(): Promise<{ success: boolean; txHash?: string;
 
     const txHash = await walletClient.writeContract(request);
 
-    await publicClient.waitForTransactionReceipt({ hash: txHash });
+    await publicClient.waitForTransactionReceipt({
+      hash: txHash,
+      timeout: 120_000
+    });
 
     log(`✅ Round started | TX: ${txHash}`);
 
@@ -191,17 +219,35 @@ export async function settleRound(roundId: bigint): Promise<{
   try {
     log(`Settling round ${roundId}...`);
 
+    // Step 1: Get results from GameCore
+    const results = await publicClient.readContract({
+      address: CONTRACTS.gameCore,
+      abi: GameCoreABI as any,
+      functionName: 'getResults',
+      args: [roundId],
+    }) as any;
+
+    if (!results || results.length === 0) {
+      throw new Error(`No results found for round ${roundId} on GameCore`);
+    }
+
+    log(`Retrieved ${results.length} match results for settlement`);
+
+    // Step 2: Settle on BettingCore with results
     const { request } = await publicClient.simulateContract({
       account: walletClient.account,
       address: CONTRACTS.bettingCore,
       abi: BettingCoreABI as any,
       functionName: 'settleRound',
-      args: [roundId],
+      args: [roundId, results],
     });
 
     const txHash = await walletClient.writeContract(request);
 
-    await publicClient.waitForTransactionReceipt({ hash: txHash });
+    await publicClient.waitForTransactionReceipt({
+      hash: txHash,
+      timeout: 120_000
+    });
 
     log(`✅ Round ${roundId} settled | TX: ${txHash}`);
 
@@ -227,14 +273,17 @@ export async function seedRoundPools(roundId: bigint): Promise<{
       account: walletClient.account,
       address: CONTRACTS.bettingCore,
       abi: BettingCoreABI as any,
-      functionName: 'seedRoundPools',
+      functionName: 'seedRound',
       args: [roundId],
-      gas: BigInt(500000), // Increase gas limit for seeding (seeds 10 matches)
+      gas: BigInt(2000000), // Increase gas limit further for seeding (seeds 10 matches)
     });
 
     const txHash = await walletClient.writeContract(request);
 
-    await publicClient.waitForTransactionReceipt({ hash: txHash });
+    await publicClient.waitForTransactionReceipt({
+      hash: txHash,
+      timeout: 120_000
+    });
 
     log(`✅ Round ${roundId} pools seeded | TX: ${txHash}`);
 
@@ -266,7 +315,10 @@ export async function finalizeRoundRevenue(roundId: bigint): Promise<{
 
     const txHash = await walletClient.writeContract(request);
 
-    await publicClient.waitForTransactionReceipt({ hash: txHash });
+    await publicClient.waitForTransactionReceipt({
+      hash: txHash,
+      timeout: 120_000
+    });
 
     log(`✅ Round ${roundId} revenue finalized | TX: ${txHash}`);
 
@@ -310,10 +362,9 @@ export async function sweepRoundPool(roundId: bigint): Promise<{
   }
 }
 
-/**
- * Automated monitoring loop (run in background)
- */
+// Game monitoring intervals
 let monitoringInterval: NodeJS.Timeout | null = null;
+let isInitializing = false; // Flag to prevent monitoring loop from running during setup
 let lastSettledRoundId: bigint | null = null;
 let roundSettledAt: number | null = null;
 
@@ -331,8 +382,11 @@ export function startMonitoring() {
   startEventListeners();
 
   // Initialize game on startup (check if season/round need to be started)
+  isInitializing = true;
   initializeGame().catch((error: any) => {
     log(`Failed to initialize game: ${error.message}`, 'error');
+  }).finally(() => {
+    isInitializing = false;
   });
 
   // Check and seed current round if needed (after initialization)
@@ -347,14 +401,19 @@ export function startMonitoring() {
           functionName: 'getRoundMetadata',
           args: [state.currentRoundId],
         }) as any;
-
-        const isSeeded = roundMetadata.seeded || false;
+        log(`[DEBUG] Round ${state.currentRoundId} metadata: ${JSON.stringify(roundMetadata, (key, value) => typeof value === 'bigint' ? value.toString() : value)}`);
+        const isSeeded = (roundMetadata.seeded ?? roundMetadata[2]) || false;
 
         if (!isSeeded) {
           log(`Current round ${state.currentRoundId} is not seeded. Seeding now...`, 'warn');
-          await seedRoundPools(state.currentRoundId);
-          log(`✅ Round ${state.currentRoundId} seeded`);
-        } else {
+          const result = await seedRoundPools(state.currentRoundId);
+          if (result.success) {
+            log(`✅ Round ${state.currentRoundId} seeded successfully`);
+          } else {
+            log(`❌ Round ${state.currentRoundId} seeding failed: ${result.error}`, 'error');
+          }
+        }
+        else {
           log(`Round ${state.currentRoundId} is already seeded`);
         }
       }
@@ -365,6 +424,11 @@ export function startMonitoring() {
 
   monitoringInterval = setInterval(async () => {
     try {
+      if (isInitializing) {
+        log('Skipping monitoring cycle - initialization in progress', 'debug' as any);
+        return;
+      }
+
       const state = await getGameState();
       const dbRound = state.currentRoundId > BigInt(0)
         ? await storage.getRoundById(state.currentRoundId.toString())
@@ -381,8 +445,17 @@ export function startMonitoring() {
           const roundResult = await startRound();
           if (roundResult.success) {
             log('✅ First round auto-started successfully');
-            // Seed the first round
-            await seedRoundPools(BigInt(1));
+            // Check if already seeded before seeding (prevent race)
+            const roundMetadata = await publicClient.readContract({
+              address: CONTRACTS.bettingCore,
+              abi: BettingCoreABI as any,
+              functionName: 'getRoundMetadata',
+              args: [BigInt(1)],
+            }) as any;
+            const isSeeded = (roundMetadata.seeded ?? roundMetadata[2]) || false;
+            if (!isSeeded) {
+              await seedRoundPools(BigInt(1));
+            }
           }
         }
         return; // Skip rest of monitoring this cycle
@@ -395,7 +468,17 @@ export function startMonitoring() {
         if (result.success) {
           log('✅ Round auto-started successfully');
           const newRoundId = BigInt(1);
-          await seedRoundPools(newRoundId);
+          // Check if already seeded before seeding (prevent race)
+          const roundMetadata = await publicClient.readContract({
+            address: CONTRACTS.bettingCore,
+            abi: BettingCoreABI as any,
+            functionName: 'getRoundMetadata',
+            args: [newRoundId],
+          }) as any;
+          const isSeeded = (roundMetadata.seeded ?? roundMetadata[2]) || false;
+          if (!isSeeded) {
+            await seedRoundPools(newRoundId);
+          }
         }
         return;
       }
@@ -447,8 +530,20 @@ export function startMonitoring() {
 
             // Seed the new round pools
             const newRoundId = state.currentRoundId + BigInt(1);
-            log(`Seeding pools for round ${newRoundId}...`);
-            await seedRoundPools(newRoundId);
+
+            // Check if already seeded before seeding (prevent race)
+            const roundMetadata = await publicClient.readContract({
+              address: CONTRACTS.bettingCore,
+              abi: BettingCoreABI as any,
+              functionName: 'getRoundMetadata',
+              args: [newRoundId],
+            }) as any;
+            const isSeeded = (roundMetadata.seeded ?? roundMetadata[2]) || false;
+
+            if (!isSeeded) {
+              log(`Seeding pools for round ${newRoundId}...`);
+              await seedRoundPools(newRoundId);
+            }
           } else {
             log(`Failed to auto-start next round: ${result.error}`, 'error');
           }
@@ -471,7 +566,7 @@ export function startMonitoring() {
 async function initializeGame() {
   try {
     const state = await getGameState();
-   
+
     // Case 1: No season exists (fresh contract) - start season and first round
     if (state.currentSeasonId === BigInt(0)) {
       log('🚀 Fresh contract detected. Starting season and first round...', 'warn');
@@ -496,8 +591,12 @@ async function initializeGame() {
       log('✅ Round 1 started');
 
       // Seed the first round
-      
-      log('✅ Round 1 pools seeded');
+      const seedResult = await seedRoundPools(BigInt(1));
+      if (seedResult.success) {
+        log('✅ Round 1 pools seeded');
+      } else {
+        log(`⚠️ Round 1 pools seeding failed: ${seedResult.error}`, 'warn');
+      }
 
       return;
     }

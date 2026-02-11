@@ -191,11 +191,41 @@ contract BettingCore is Ownable, ReentrancyGuard, Pausable {
             }
         }
 
-        // Calculate parlay multiplier (L-01 FIX: simplified function signature)
-        uint256 parlayMultiplier = _calculateParlayMultiplier(legCount);
+        // Calculate odds-based multiplier by multiplying individual match odds
+        uint256 oddsMultiplier = Constants.PRECISION; // Start at 1.0x
 
-        // Calculate potential payout (simple: bet amount × locked multiplier)
-        uint256 potentialPayout = (amount * parlayMultiplier) / Constants.PRECISION;
+        for (uint256 i = 0; i < legCount;) {
+            uint256 matchIndex = matchIndices[i];
+            uint8 prediction = predictions[i];
+
+            // Get locked odds for this match
+            DataTypes.LockedOdds storage odds = s.lockedOdds[roundId][matchIndex];
+            require(odds.locked, "Odds not locked");
+
+            // Get the odds for the predicted outcome
+            uint256 matchOdds;
+            if (prediction == 1) {
+                matchOdds = odds.homeOdds;
+            } else if (prediction == 2) {
+                matchOdds = odds.awayOdds;
+            } else {
+                matchOdds = odds.drawOdds;
+            }
+
+            // Multiply odds together: oddsMultiplier = oddsMultiplier * matchOdds / PRECISION
+            oddsMultiplier = (oddsMultiplier * matchOdds) / Constants.PRECISION;
+
+            unchecked {
+                ++i;
+            }
+        }
+
+        // Apply parlay bonus on top of odds multiplier
+        uint256 parlayBonus = _calculateParlayMultiplier(legCount);
+        uint256 finalMultiplier = (oddsMultiplier * parlayBonus) / Constants.PRECISION;
+
+        // Calculate potential payout using final multiplier
+        uint256 potentialPayout = (amount * finalMultiplier) / Constants.PRECISION;
 
         // NEW ACCOUNTING: Check protocol has enough reserves to lock for this bet
         require(s.protocolReserves >= potentialPayout, "Insufficient protocol reserves");
@@ -219,7 +249,7 @@ contract BettingCore is Ownable, ReentrancyGuard, Pausable {
             token: s.lbtToken, // Always LBT
             amount: uint128(amount),
             potentialPayout: uint128(potentialPayout),
-            lockedMultiplier: uint128(parlayMultiplier),
+            lockedMultiplier: uint128(finalMultiplier), // Store final multiplier (odds × parlay bonus)
             roundId: uint64(roundId),
             timestamp: uint32(block.timestamp),
             legCount: legCount,
@@ -253,7 +283,7 @@ contract BettingCore is Ownable, ReentrancyGuard, Pausable {
         }
         s.totalVolumeAllTime += amount;
 
-        emit BetPlaced(betId, msg.sender, roundId, amount, parlayMultiplier, legCount);
+        emit BetPlaced(betId, msg.sender, roundId, amount, finalMultiplier, legCount);
     }
 
     /**
@@ -1007,36 +1037,6 @@ contract BettingCore is Ownable, ReentrancyGuard, Pausable {
      * @notice Get locked odds for a match (fixed at seeding time)
      * @param roundId Round ID
      * @param matchIndex Match index (0-9)
-     * @return homeOdds Home win odds (18 decimals)
-     * @return awayOdds Away win odds (18 decimals)
-     * @return drawOdds Draw odds (18 decimals)
-     * @return locked Whether odds are locked
-     */
-    /**
-     * @notice Get odds for a specific prediction in a match
-     * @param roundId Round ID
-     * @param matchIndex Match index
-     * @param prediction Predicted outcome (1=HOME, 2=AWAY, 3=DRAW)
-     * @return odds Scaled odds (18 decimals)
-     */
-    function getMatchOdds(
-        uint256 roundId,
-        uint256 matchIndex,
-        uint8 prediction
-    ) external view returns (uint256 odds) {
-        DataTypes.LockedOdds storage locked = BettingStorage.layout().lockedOdds[roundId][matchIndex];
-        if (!locked.locked) return 0;
-        
-        if (prediction == 1) odds = uint256(locked.homeOdds) * 1e12;
-        else if (prediction == 2) odds = uint256(locked.awayOdds) * 1e12;
-        else if (prediction == 3) odds = uint256(locked.drawOdds) * 1e12;
-        else odds = 0;
-    }
-
-    /**
-     * @notice Get locked odds for a specific match
-     * @param roundId Round ID
-     * @param matchIndex Match index
      * @return homeOdds Home win odds (18 decimals)
      * @return awayOdds Away win odds (18 decimals)
      * @return drawOdds Draw odds (18 decimals)
