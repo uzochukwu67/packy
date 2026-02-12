@@ -1,15 +1,29 @@
 import { Sidebar } from "./Sidebar";
 import { BetSlip } from "./BetSlip";
-import { Menu, Zap, Shield, Calendar, Info, Award } from "lucide-react";
+import { Menu, Zap, Shield, Calendar, Info, Award, Droplet, CheckCircle, Loader2, Clock } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useState } from "react";
 import { useLocation, Link } from "wouter";
 import { cn } from "@/lib/utils";
 import { LayoutDashboard, Coins, History, Trophy } from "lucide-react";
+import { WalletButton } from "@/components/wallet/WalletButton";
+import { usePrivy, useWallets } from "@privy-io/react-auth";
+import { useLeagueBalance } from "@/hooks/contracts/useLeagueToken";
+import { useFaucet } from "@/hooks/useFaucet";
+import { useUserPoints } from "@/hooks/usePoints";
 
 export function MainLayout({ children }: { children: React.ReactNode }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [location] = useLocation();
+  const [showSuccess, setShowSuccess] = useState(false);
+
+  const { authenticated } = usePrivy();
+  const { wallets } = useWallets();
+  const address = wallets[0]?.address as `0x${string}` | undefined;
+
+  const { balanceFloat, refetch } = useLeagueBalance(address);
+  const { requestTokens, isLoading, error } = useFaucet();
+  const { data: userPoints } = useUserPoints(address);
 
   const navItems = [
     { label: "Betting Dashboard", icon: LayoutDashboard, href: "/dashboard" },
@@ -18,6 +32,17 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
     { label: "Season Predictor", icon: Trophy, href: "/season" },
     { label: "Leaderboard", icon: Award, href: "/leaderboard" },
   ];
+
+  const handleFaucetClick = async () => {
+    try {
+      await requestTokens();
+      setShowSuccess(true);
+      refetch();
+      setTimeout(() => setShowSuccess(false), 3000);
+    } catch (err) {
+      // Error is already handled by the hook
+    }
+  };
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -36,13 +61,13 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
           <SheetTrigger>
             <Menu className="w-6 h-6 text-gray-600" />
           </SheetTrigger>
-          <SheetContent side="left" className="w-[80%] p-0">
-            <div className="p-6">
+          <SheetContent side="left" className="w-[85%] p-0 flex flex-col">
+            <div className="p-6 flex-1 overflow-y-auto">
               <div className="flex items-center gap-2 mb-8">
                 <div className="w-8 h-8 rounded bg-white flex items-center justify-center text-black font-black font-display text-sm">P</div>
                 <span className="font-display font-bold text-2xl text-white">PHANTASMA</span>
               </div>
-              <nav className="space-y-1">
+              <nav className="space-y-1 mb-6">
                 {navItems.map((item) => {
                   const isActive = location === item.href;
                   return (
@@ -58,6 +83,81 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
                   );
                 })}
               </nav>
+            </div>
+
+            {/* Mobile Wallet Section */}
+            <div className="p-6 border-t border-white/5 space-y-3">
+              {/* Points Display */}
+              {authenticated && address && userPoints && (
+                <div className="bg-zinc-900 rounded-xl p-4 border border-white/10">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">Testnet Points</span>
+                    <Award className="w-4 h-4 text-cyan-500" />
+                  </div>
+                  <div className="text-2xl font-bold text-white font-mono tracking-tight">
+                    {userPoints.totalPoints.toLocaleString()}
+                  </div>
+                  <div className="flex items-center justify-between mt-2 text-xs text-zinc-400">
+                    <span>{userPoints.betsPlaced} bets</span>
+                    <span>{userPoints.betsWon} won</span>
+                  </div>
+                </div>
+              )}
+
+              {/* LBT Balance Display */}
+              {authenticated && address && (
+                <div className="bg-zinc-900 rounded-xl p-4 border border-white/10">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">Balance</span>
+                    <Droplet className="w-4 h-4 text-cyan-500" />
+                  </div>
+                  <div className="text-2xl font-bold text-white font-mono tracking-tight">
+                    {balanceFloat.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                  </div>
+                  <div className="text-xs text-zinc-400 mt-0.5">LBT</div>
+                </div>
+              )}
+
+              {/* Faucet Button */}
+              {authenticated && address && (
+                <button
+                  onClick={handleFaucetClick}
+                  disabled={isLoading || showSuccess}
+                  className={cn(
+                    "w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-colors",
+                    showSuccess
+                      ? "bg-cyan-500 text-black"
+                      : "bg-white text-black hover:bg-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                  )}
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Requesting...
+                    </>
+                  ) : showSuccess ? (
+                    <>
+                      <CheckCircle className="w-4 h-4" />
+                      Tokens Sent!
+                    </>
+                  ) : (
+                    <>
+                      <Droplet className="w-4 h-4" />
+                      Get 1000 LBT
+                    </>
+                  )}
+                </button>
+              )}
+
+              {/* Error Message */}
+              {error && (
+                <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-2">
+                  {error}
+                </div>
+              )}
+
+              {/* Wallet Connect Button */}
+              <WalletButton />
             </div>
           </SheetContent>
         </Sheet>

@@ -1,19 +1,19 @@
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, History, Trophy, Wallet, Droplet, CheckCircle, Loader2, Clock, Award } from "lucide-react";
+import { LayoutDashboard, History, Trophy, Droplet, CheckCircle, Loader2, Clock, Award } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useAccount, useConnect, useDisconnect } from "wagmi";
-import { injected } from "wagmi/connectors";
+import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { useLeagueBalance } from "@/hooks/contracts/useLeagueToken";
 import { useFaucet } from "@/hooks/useFaucet";
 import { useUserPoints } from "@/hooks/usePoints";
 import { useState } from "react";
-import { bscTestnet } from "wagmi/chains";
+import { WalletButton } from "@/components/wallet/WalletButton";
 
 export function Sidebar() {
   const [location] = useLocation();
-  const { address, isConnected } = useAccount();
-  const { connect } = useConnect();
-  const { disconnect } = useDisconnect();
+  const { authenticated } = usePrivy();
+  const { wallets } = useWallets();
+  const address = wallets[0]?.address as `0x${string}` | undefined;
+
   const { balanceFloat, refetch } = useLeagueBalance(address);
   const { requestTokens, isLoading, error } = useFaucet();
   const { data: userPoints } = useUserPoints(address);
@@ -26,14 +26,6 @@ export function Sidebar() {
     { label: "Season Predictor", icon: Trophy, href: "/season" },
     { label: "Leaderboard", icon: Award, href: "/leaderboard" },
   ];
-
-  const handleWalletClick = () => {
-    if (isConnected) {
-      disconnect();
-    } else {
-      connect({ connector: injected(), chainId: bscTestnet.id });
-    }
-  };
 
   const handleFaucetClick = async () => {
     try {
@@ -78,7 +70,7 @@ export function Sidebar() {
 
       <div className="mt-auto p-6 border-t border-white/5 space-y-3">
         {/* Points Display */}
-        {isConnected && userPoints && (
+        {authenticated && address && userPoints && (
           <div className="bg-zinc-900 rounded-xl p-4 border border-white/10">
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">Testnet Points</span>
@@ -95,7 +87,7 @@ export function Sidebar() {
         )}
 
         {/* LBT Balance Display */}
-        {isConnected && (
+        {authenticated && address && (
           <div className="bg-zinc-900 rounded-xl p-4 border border-white/10">
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">Balance</span>
@@ -109,7 +101,7 @@ export function Sidebar() {
         )}
 
         {/* Faucet Button */}
-        {isConnected && (
+        {authenticated && address && (
           <button
             onClick={handleFaucetClick}
             disabled={isLoading || showSuccess}
@@ -147,17 +139,7 @@ export function Sidebar() {
         )}
 
         {/* Wallet Connect/Disconnect */}
-        <button
-          onClick={handleWalletClick}
-          className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-zinc-900 border border-white/10 hover:border-cyan-400/50 text-xs font-bold uppercase tracking-widest text-zinc-300 hover:text-white transition-colors"
-        >
-          <Wallet className="w-4 h-4" />
-          {isConnected ? (
-            <span className="truncate max-w-[120px]">{address?.slice(0, 6)}...{address?.slice(-4)}</span>
-          ) : (
-            "Connect Wallet"
-          )}
-        </button>
+        <WalletButton />
       </div>
     </aside>
   );

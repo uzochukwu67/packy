@@ -14,15 +14,15 @@
 
 export const DEPLOYED_ADDRESSES = {
   // Core Protocol Contracts
-  leagueBetToken: '0x1d08F7A669E18B3B3AEce77a8C20E1Ef7536CEE6' as const,
-  gameCore: '0xEB929B5c0e71a6b785CE89f8A0fd218D92c8fB66' as const,
-  bettingCore: '0xf99a4F28E9D1cDC481a4b742bc637Af9e60e3FE5' as const,
+  leagueBetToken: '0xdf388312ac12e0d4dbB25d24fD3B2806e14423e2' as const,
+  gameCore: '0x02fD62cCBb2DF02583db6cAddF00c0bAEa8C7204' as const,
+  bettingCore: '0x86A391449E0259Cd5DbFcEbbbac839573Ced5Cfd' as const,
 
   // Periphery Contracts
-  bettingRouter: '0x02d49e1e3EE1Db09a7a8643Ae1BCc72169180861' as const,
-  seasonPredictor: '0x45da13240cEce4ca92BEF34B6955c7883e5Ce9E4' as const,
-  swapRouter: '0xD8d4485095f3203Df449D51768a78FfD79e4Ff8E' as const,
-  tokenRegistry: '0xF152CF478FA4B4220378692D2E85067269525d89' as const,
+  bettingRouter: '0xa0B5CCed676202888192345E38b8CeE5B219B1e9' as const,
+  seasonPredictor: '0xda8cF81bEe9D65Dc17661421605b16a1De65671C' as const,
+  swapRouter: '0xE4c3C52eA813158E01318961230f1a37F130f862' as const,
+  tokenRegistry: '0x5f2c8a6a7D30def120Fe7802a7d816750EB99429' as const,
 
   // Protocol Treasury
   treasury: '0x05f463129c9ce4Efb331c45b2F1A6a8E095c790D' as const,
@@ -31,11 +31,11 @@ export const DEPLOYED_ADDRESSES = {
 export type ContractAddresses = typeof DEPLOYED_ADDRESSES;
 
 // === DEPLOYMENT SUMMARY (V3.0 - PROTOCOL-BACKED MODEL) ===
-//   LBT Token:         0x57741E13478e85AB34f5070566DFEEC4CA9211f5
-//   GameCore:          0x540443FC01F9a0d84E99059336569F34c7d7Cb38
-//   BettingCore:       0x0Ac3c48aBF0d1651655cD3E3E2ca8b11c32dAc5d
-//   BettingRouter:     0xAbc65bFd172F08e4613Bc87325f176AaEFA57EEE
-//   SeasonPredictor:   0x84E5Ac019Ca31f940A46fB65A82cad02eC1B91bc
-//   SwapRouter:        0x81a465b85F197598aaA5F134256DD1BA5D3178f2
-//   TokenRegistry:     0x11795E0Ba315D8B05bD74035C2a3b9fD15d6857E
+//   LBT Token:         0xdf388312ac12e0d4dbB25d24fD3B2806e14423e2
+//   GameCore:          0x02fD62cCBb2DF02583db6cAddF00c0bAEa8C7204
+//   BettingCore:       0x86A391449E0259Cd5DbFcEbbbac839573Ced5Cfd
+//   BettingRouter:     0xa0B5CCed676202888192345E38b8CeE5B219B1e9
+//   SeasonPredictor:   0xda8cF81bEe9D65Dc17661421605b16a1De65671C
+//   SwapRouter:        0xE4c3C52eA813158E01318961230f1a37F130f862
+//   TokenRegistry:     0x5f2c8a6a7D30def120Fe7802a7d816750EB99429
 //   Protocol Treasury: 0x05f463129c9ce4Efb331c45b2F1A6a8E095c790D

@@ -1,9 +1,11 @@
 import { Switch, Route } from "wouter";
 import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
 import { WagmiProvider } from 'wagmi';
+import { PrivyProvider } from '@privy-io/react-auth';
 import { config } from "./lib/wagmi";
 import { Toaster } from "@/components/ui/toaster";
 import { BetSlipProvider } from "@/context/BetSlipContext";
+import { bscTestnet } from 'wagmi/chains';
 
 import Home from "@/pages/Home";
 import Dashboard from "@/pages/Dashboard";
@@ -64,14 +66,31 @@ function Router() {
 
 function App() {
   return (
-    <WagmiProvider config={config}>
-      <QueryClientProvider client={queryClient}>
-        <BetSlipProvider>
-          <Toaster />
-          <Router />
-        </BetSlipProvider>
-      </QueryClientProvider>
-    </WagmiProvider>
+    <PrivyProvider
+      appId={import.meta.env.VITE_PRIVY_APP_ID || 'clzk8aaaa00kql50fd6wqaaaa'}
+      config={{
+        loginMethods: ['email', 'google', 'twitter', 'discord', 'wallet'],
+        appearance: {
+          theme: 'dark',
+          accentColor: '#06b6d4', // cyan-500
+          logo: 'https://phantasma.bet/logo.png',
+        },
+        embeddedWallets: {
+          createOnLogin: 'users-without-wallets',
+        },
+        defaultChain: bscTestnet,
+        supportedChains: [bscTestnet],
+      }}
+    >
+      <WagmiProvider config={config}>
+        <QueryClientProvider client={queryClient}>
+          <BetSlipProvider>
+            <Toaster />
+            <Router />
+          </BetSlipProvider>
+        </QueryClientProvider>
+      </WagmiProvider>
+    </PrivyProvider>
   );
 }
 
