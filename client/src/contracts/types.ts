@@ -134,12 +134,12 @@ export function parseOdds(odds: number): bigint {
 /**
  * Format token amount from wei to ether
  */
-export function formatToken(amount: bigint, decimals = 18): string {
+export function formatToken(amount: bigint = BigInt(0), decimals = 18): string {
   const divisor = BigInt(10 ** decimals);
-  const whole = amount / divisor;
-  const fraction = amount % divisor;
+  const whole = Number(amount) / Number(divisor);
+  const fraction = Number(amount) % Number(divisor);
 
-  if (fraction === BigInt(0)) {
+  if (BigInt(fraction) === BigInt(0)) {
     return whole.toString();
   }
 
