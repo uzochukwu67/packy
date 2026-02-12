@@ -10,6 +10,7 @@ import { useLeagueAllowance, useApproveLeague } from "@/hooks/contracts/useLeagu
 import { parseToken, formatToken, formatOdds } from "@/contracts/types";
 import { useEffect, useState } from "react";
 import { DEPLOYED_ADDRESSES } from "@/contracts/addresses";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 export function BetSlip() {
   const { bets, removeBet, clearSlip, stake, setStake, isOpen, toggleSlip } = useBetSlip();
@@ -163,36 +164,9 @@ export function BetSlip() {
     }
   };
 
-  if (!isOpen) {
-    return (
-      <button
-        onClick={toggleSlip}
-        className="fixed bottom-6 right-6 z-50 md:hidden bg-cyan-500 text-black p-4 rounded-full shadow-xl shadow-cyan-500/30"
-      >
-        <Ticket className="w-6 h-6" />
-        {bets.length > 0 && (
-          <span className="absolute -top-1 -right-1 w-5 h-5 bg-white text-black rounded-full text-[10px] flex items-center justify-center font-bold">
-            {bets.length}
-          </span>
-        )}
-      </button>
-    );
-  }
-
-  return (
-    <div className="w-80 bg-zinc-950 border-l border-white/5 h-screen sticky top-0 hidden lg:flex flex-col backdrop-blur-xl">
-      <div className="p-5 border-b border-white/5 bg-white/5 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-cyan-500/10 flex items-center justify-center text-cyan-500">
-            <Ticket className="w-4 h-4" />
-          </div>
-          <h2 className="font-display font-bold text-lg text-white">Bet Slip</h2>
-        </div>
-        <span className="bg-white/10 text-white px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-widest uppercase">
-          {bets.length} SELS
-        </span>
-      </div>
-
+  // Bet slip content component (reusable for desktop and mobile)
+  const BetSlipContent = () => (
+    <>
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <AnimatePresence>
           {bets.length === 0 ? (
@@ -348,6 +322,59 @@ export function BetSlip() {
           </>
         )}
       </div>
-    </div>
+    </>
+  );
+
+  return (
+    <>
+      {/* Mobile Floating Button */}
+      <button
+        onClick={toggleSlip}
+        className="fixed bottom-6 right-6 z-50 lg:hidden bg-cyan-500 text-black p-4 rounded-full shadow-xl shadow-cyan-500/30 hover:bg-cyan-400 transition-colors"
+      >
+        <Ticket className="w-6 h-6" />
+        {bets.length > 0 && (
+          <span className="absolute -top-1 -right-1 w-5 h-5 bg-white text-black rounded-full text-[10px] flex items-center justify-center font-bold">
+            {bets.length}
+          </span>
+        )}
+      </button>
+
+      {/* Mobile Sheet */}
+      <Sheet open={isOpen} onOpenChange={toggleSlip}>
+        <SheetContent side="right" className="w-full sm:w-[400px] p-0 flex flex-col bg-zinc-950">
+          <SheetHeader className="p-5 border-b border-white/5 bg-white/5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-cyan-500/10 flex items-center justify-center text-cyan-500">
+                  <Ticket className="w-4 h-4" />
+                </div>
+                <SheetTitle className="font-display font-bold text-lg text-white">Bet Slip</SheetTitle>
+              </div>
+              <span className="bg-white/10 text-white px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-widest uppercase">
+                {bets.length} SELS
+              </span>
+            </div>
+          </SheetHeader>
+          <BetSlipContent />
+        </SheetContent>
+      </Sheet>
+
+      {/* Desktop Sidebar */}
+      <div className="w-80 bg-zinc-950 border-l border-white/5 h-screen sticky top-0 hidden lg:flex flex-col backdrop-blur-xl">
+        <div className="p-5 border-b border-white/5 bg-white/5 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-cyan-500/10 flex items-center justify-center text-cyan-500">
+              <Ticket className="w-4 h-4" />
+            </div>
+            <h2 className="font-display font-bold text-lg text-white">Bet Slip</h2>
+          </div>
+          <span className="bg-white/10 text-white px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-widest uppercase">
+            {bets.length} SELS
+          </span>
+        </div>
+        <BetSlipContent />
+      </div>
+    </>
   );
 }
