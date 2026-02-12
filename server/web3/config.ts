@@ -4,38 +4,37 @@
  */
 
 import { createWalletClient, createPublicClient, http } from 'viem';
-import { sepolia } from 'viem/chains';
+import { bscTestnet } from 'viem/chains';
 import { privateKeyToAccount } from 'viem/accounts';
 import dotenv from 'dotenv';
 dotenv.config();
 
-// Contract addresses on Sepolia (NEW PROTOCOL - February 10, 2026)
-// Protocol-backed model with bounty system and referrals
+// Contract addresses on BNB Testnet (Chain ID 97)
 export const CONTRACTS = {
   // Core contracts
-  leagueBetToken: '0x57741E13478e85AB34f5070566DFEEC4CA9211f5' as const,
-  gameCore: '0x540443FC01F9a0d84E99059336569F34c7d7Cb38' as const,
-  bettingCore: '0x0Ac3c48aBF0d1651655cD3E3E2ca8b11c32dAc5d' as const,
-  bettingRouter: '0xAbc65bFd172F08e4613Bc87325f176AaEFA57EEE' as const,
+  leagueBetToken: '0x1d08F7A669E18B3B3AEce77a8C20E1Ef7536CEE6' as const,
+  gameCore: '0xEB929B5c0e71a6b785CE89f8A0fd218D92c8fB66' as const,
+  bettingCore: '0xf99a4F28E9D1cDC481a4b742bc637Af9e60e3FE5' as const,
+  bettingRouter: '0x02d49e1e3EE1Db09a7a8643Ae1BCc72169180861' as const,
 
   // Periphery
-  seasonPredictor: '0x84E5Ac019Ca31f940A46fB65A82cad02eC1B91bc' as const,
-  swapRouter: '0x81a465b85F197598aaA5F134256DD1BA5D3178f2' as const,
-  tokenRegistry: '0x11795E0Ba315D8B05bD74035C2a3b9fD15d6857E' as const,
+  seasonPredictor: '0x45da13240cEce4ca92BEF34B6955c7883e5Ce9E4' as const,
+  swapRouter: '0xD8d4485095f3203Df449D51768a78FfD79e4Ff8E' as const,
+  tokenRegistry: '0xF152CF478FA4B4220378692D2E85067269525d89' as const,
 
   // Treasury
   treasury: '0x05f463129c9ce4Efb331c45b2F1A6a8E095c790D' as const,
 } as const;
 
-// === DEPLOYMENT SUMMARY ===
-//   LeagueBetToken: 0x57741E13478e85AB34f5070566DFEEC4CA9211f5
-//   GameCore: 0x540443FC01F9a0d84E99059336569F34c7d7Cb38
-//   BettingCore: 0x0Ac3c48aBF0d1651655cD3E3E2ca8b11c32dAc5d
-//   BettingRouter: 0xAbc65bFd172F08e4613Bc87325f176AaEFA57EEE
-//   SeasonPredictor: 0x84E5Ac019Ca31f940A46fB65A82cad02eC1B91bc
-//   SwapRouter: 0x81a465b85F197598aaA5F134256DD1BA5D3178f2
-//   TokenRegistry: 0x11795E0Ba315D8B05bD74035C2a3b9fD15d6857E
-//   Treasury: 0x05f463129c9ce4Efb331c45b2F1A6a8E095c790D
+// === DEPLOYMENT SUMMARY - BNB Testnet (Chain ID 97) ===
+//   LBT Token:         0x1d08F7A669E18B3B3AEce77a8C20E1Ef7536CEE6
+//   GameCore:          0xEB929B5c0e71a6b785CE89f8A0fd218D92c8fB66
+//   BettingCore:       0xf99a4F28E9D1cDC481a4b742bc637Af9e60e3FE5
+//   BettingRouter:     0x02d49e1e3EE1Db09a7a8643Ae1BCc72169180861
+//   SeasonPredictor:   0x45da13240cEce4ca92BEF34B6955c7883e5Ce9E4
+//   SwapRouter:        0xD8d4485095f3203Df449D51768a78FfD79e4Ff8E
+//   TokenRegistry:     0xF152CF478FA4B4220378692D2E85067269525d89
+//   Protocol Treasury: 0x05f463129c9ce4Efb331c45b2F1A6a8E095c790D
 // Get admin private key from environment
 const ADMIN_PRIVATE_KEY = process.env.ADMIN_PRIVATE_KEY as `0x${string}`;
 
@@ -46,19 +45,19 @@ if (!ADMIN_PRIVATE_KEY) {
 // Create admin account
 export const adminAccount = privateKeyToAccount(ADMIN_PRIVATE_KEY);
 
-// RPC endpoint - use environment or default to Sepolia public RPC
-const RPC_URL = process.env.RPC_URL || 'https://sepolia.infura.io/v3/YOUR_INFURA_KEY';
+// RPC endpoint - use environment or default to BSC Testnet public RPC
+const RPC_URL = process.env.RPC_URL || 'https://bsc-testnet.publicnode.com';
 
 // Public client for reading blockchain data
 export const publicClient = createPublicClient({
-  chain: sepolia,
+  chain: bscTestnet,
   transport: http(RPC_URL),
 });
 
 // Wallet client for writing transactions (admin operations)
 export const walletClient = createWalletClient({
   account: adminAccount,
-  chain: sepolia,
+  chain: bscTestnet,
   transport: http(RPC_URL),
 });
 

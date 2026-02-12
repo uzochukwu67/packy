@@ -27,14 +27,14 @@ export default function Liquidity() {
   const [needsApproval, setNeedsApproval] = useState(false);
 
   // Fetch real contract data
-  const { 
-    totalLiquidity, 
-    availableLiquidity, 
+  const {
+    totalLiquidity,
+    availableLiquidity,
     lockedLiquidity,
     utilizationRate,
-    isLoading: statsLoading 
+    isLoading: statsLoading
   } = useLiquidityPoolStats();
-  
+
   const {
     amount: userLPAmount,
     shares: userShares,
@@ -207,40 +207,40 @@ export default function Liquidity() {
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div>
-        <h1 className="text-3xl font-display font-bold text-gray-900 mb-2">Liquidity Pool</h1>
-        <p className="text-muted-foreground">Provide liquidity to the house bankroll and earn share of profits.</p>
+        <h1 className="text-3xl font-display font-bold text-white mb-2 tracking-tight">Liquidity Pool</h1>
+        <p className="text-zinc-500 font-medium">Provide liquidity to the house bankroll and earn share of profits.</p>
       </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {stats.map((stat, i) => (
-          <motion.div 
+          <motion.div
             key={i}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.1 }}
-            className="bg-white p-6 rounded-2xl border border-border shadow-sm hover:shadow-md transition-all duration-300"
+            className="bg-zinc-900 p-6 rounded-2xl border border-white/5 shadow-sm hover:shadow-cyan-500/5 transition-all duration-300"
           >
             <div className="flex items-start justify-between mb-4">
               <div className={cn(
                 "p-3 rounded-xl",
                 'isProfit' in stat && stat.isProfit === false
-                  ? "bg-red-50 text-red-600"
-                  : "bg-primary/10 text-primary"
+                  ? "bg-red-500/10 text-red-500"
+                  : "bg-cyan-500/10 text-cyan-500"
               )}>
                 <stat.icon className="w-6 h-6" />
               </div>
               <span className={cn(
-                "text-xs font-bold px-2 py-1 rounded-full",
+                "text-[10px] font-black px-2 py-1 rounded uppercase tracking-widest",
                 'isProfit' in stat && stat.isProfit === false
-                  ? "bg-red-50 text-red-600"
-                  : "bg-green-50 text-green-600"
+                  ? "bg-red-500/10 text-red-500"
+                  : "bg-cyan-500/10 text-cyan-500"
               )}>{stat.change}</span>
             </div>
-            <p className="text-sm text-gray-500 font-medium mb-1">{stat.label}</p>
-            <h3 className="text-2xl font-display font-bold text-gray-900 mb-1">{stat.value}</h3>
+            <p className="text-[10px] font-black text-zinc-600 uppercase tracking-widest mb-1">{stat.label}</p>
+            <h3 className="text-2xl font-display font-bold text-white mb-1 tracking-tight">{stat.value}</h3>
             {stat.subValue && (
-              <p className="text-xs text-gray-400">{stat.subValue}</p>
+              <p className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">{stat.subValue}</p>
             )}
           </motion.div>
         ))}
@@ -249,13 +249,13 @@ export default function Liquidity() {
       {/* Interaction Panel */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Left: Action Form */}
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
-          className="bg-white rounded-2xl border border-border overflow-hidden shadow-sm"
+          className="bg-zinc-900 rounded-2xl border border-white/10 overflow-hidden shadow-xl shadow-black/20"
         >
           <div className="flex border-b border-border">
-            <button 
+            <button
               onClick={() => setActiveTab('deposit')}
               className={cn(
                 "flex-1 py-4 text-sm font-bold transition-all duration-300 relative",
@@ -264,13 +264,13 @@ export default function Liquidity() {
             >
               <span className="relative z-10">Deposit Liquidity</span>
               {activeTab === 'deposit' && (
-                <motion.div 
+                <motion.div
                   layoutId="activeTab"
-                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" 
+                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary"
                 />
               )}
             </button>
-            <button 
+            <button
               onClick={() => setActiveTab('withdraw')}
               className={cn(
                 "flex-1 py-4 text-sm font-bold transition-all duration-300 relative",
@@ -279,9 +279,9 @@ export default function Liquidity() {
             >
               <span className="relative z-10">Withdraw Liquidity</span>
               {activeTab === 'withdraw' && (
-                <motion.div 
+                <motion.div
                   layoutId="activeTab"
-                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" 
+                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary"
                 />
               )}
             </button>
@@ -300,15 +300,15 @@ export default function Liquidity() {
                   {activeTab === 'deposit' ? 'Deposit Amount (LEAGUE)' : 'Withdraw Amount (LEAGUE)'}
                 </label>
                 <div className="relative">
-                  <input 
+                  <input
                     type="number"
                     placeholder="0.00"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
                     disabled={isDepositing || isWithdrawing || approvePending || isApproving}
-                    className="w-full px-4 py-3 bg-gray-50 border border-input rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary font-mono text-lg disabled:opacity-50"
+                    className="w-full px-4 py-4 bg-zinc-950 border border-white/5 rounded-xl focus:outline-none focus:ring-1 focus:ring-cyan-500/50 focus:border-cyan-500/50 font-mono text-lg text-white disabled:opacity-50"
                   />
-                  <button 
+                  <button
                     onClick={setMaxAmount}
                     disabled={isDepositing || isWithdrawing || approvePending || isApproving}
                     className="absolute right-3 top-3 text-xs font-bold text-primary bg-primary/10 px-2 py-1 rounded-md hover:bg-primary/20 transition-colors disabled:opacity-50"
@@ -382,8 +382,8 @@ export default function Liquidity() {
                     isDepositing || isWithdrawing || isPartialWithdrawing
                       ? "bg-gray-400"
                       : depositSuccess || withdrawSuccess || partialWithdrawSuccess
-                      ? "bg-green-500"
-                      : "bg-primary hover:bg-primary/90 shadow-primary/20"
+                        ? "bg-green-500"
+                        : "bg-primary hover:bg-primary/90 shadow-primary/20"
                   )}
                 >
                   {isDepositing || isWithdrawing || isPartialWithdrawing ? (
@@ -420,13 +420,13 @@ export default function Liquidity() {
         </motion.div>
 
         {/* Right: Info / History */}
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           className="bg-gradient-to-br from-gray-50 to-white rounded-2xl p-6 md:p-8 border border-border/50 shadow-sm"
         >
-          <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
-            <Percent className="w-5 h-5 text-primary" />
+          <h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-white">
+            <Percent className="w-5 h-5 text-cyan-400" />
             How it works
           </h3>
           <ul className="space-y-4 mb-8">
@@ -435,17 +435,17 @@ export default function Liquidity() {
               "Earn a share of the house edge (5% protocol fee) on every bet placed.",
               "Withdraw your initial deposit plus accumulated rewards at any time (0.5% exit fee)."
             ].map((text, i) => (
-              <motion.li 
+              <motion.li
                 key={i}
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.5 + i * 0.1 }}
                 className="flex gap-3"
               >
-                <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-primary flex-shrink-0 text-xs font-bold">
+                <div className="w-6 h-6 rounded-full bg-cyan-500/10 flex items-center justify-center text-cyan-500 flex-shrink-0 text-[10px] font-black">
                   {i + 1}
                 </div>
-                <p className="text-sm text-gray-600">{text}</p>
+                <p className="text-sm text-zinc-400 font-medium">{text}</p>
               </motion.li>
             ))}
           </ul>
@@ -489,7 +489,7 @@ export default function Liquidity() {
           )}
 
           {/* Pool Stats */}
-          <div className="bg-white border border-border rounded-xl p-4 mb-4">
+          <div className="bg-zinc-950/50 border border-white/5 rounded-xl p-6 mb-4">
             <h4 className="font-bold text-gray-900 text-sm mb-3">Pool Statistics</h4>
             <div className="space-y-2">
               <div className="flex justify-between text-xs">
@@ -507,19 +507,19 @@ export default function Liquidity() {
             </div>
           </div>
 
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.8 }}
             className="bg-amber-50 border border-amber-200 rounded-xl p-4"
           >
-             <h4 className="font-bold text-amber-900 text-sm mb-1 flex items-center gap-1">
-               <AlertCircle className="w-4 h-4" />
-               Risk Warning
-             </h4>
-             <p className="text-xs text-amber-800/80 leading-relaxed">
-               Liquidity providers act as the counterparty to bettors. While the house has a statistical edge, short-term variance can result in temporary losses to the pool.
-             </p>
+            <h4 className="font-bold text-amber-900 text-sm mb-1 flex items-center gap-1">
+              <AlertCircle className="w-4 h-4" />
+              Risk Warning
+            </h4>
+            <p className="text-xs text-amber-800/80 leading-relaxed">
+              Liquidity providers act as the counterparty to bettors. While the house has a statistical edge, short-term variance can result in temporary losses to the pool.
+            </p>
           </motion.div>
         </motion.div>
       </div>

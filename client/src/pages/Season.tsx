@@ -4,12 +4,12 @@ import { useState, useEffect } from "react";
 import { useAccount } from "wagmi";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  useSeasonPrizePool,
+  useSeasonPool,
   useMakePrediction,
   useUserPrediction,
-  useCanClaimPrize,
-  useClaimPrize,
-  usePredictionDistribution
+  useCheckWinner,
+  useClaimReward,
+  useTeamPredictionCount
 } from "@/hooks/contracts/useSeasonPredictor";
 import { useCurrentSeason, useTeam, useCurrentSeasonData } from "@/hooks/contracts/useGameCore";
 import { formatToken } from "@/contracts/types";
@@ -23,25 +23,29 @@ export default function Season() {
   // Get current season data
   const { data: seasonId } = useCurrentSeason();
   const { data: season } = useCurrentSeasonData();
-  const { data: prizePool } = useSeasonPrizePool(seasonId);
-  const { data: userPrediction } = useUserPrediction(seasonId, address);
-  const { data: canClaimData } = useCanClaimPrize(seasonId, address);
-  const { data: distribution } = usePredictionDistribution(seasonId);
+  const { data: poolData } = useSeasonPool(seasonId);
+  const { data: userPredictionData } = useUserPrediction(seasonId, address);
+  const { data: checkWinnerData } = useCheckWinner(seasonId, address);
 
   // Write operations
   const { makePrediction, isConfirming: isPredicting, isSuccess: predictSuccess } = useMakePrediction();
-  const { claimPrize, isConfirming: isClaiming, isSuccess: claimSuccess } = useClaimPrize();
+  const { claimReward, isConfirming: isClaiming, isSuccess: claimSuccess } = useClaimReward();
+
+  // Parse pool data
+  const prizePool = poolData ? (poolData as any)[0] : 0n;
+  const winnerDeclared = poolData ? (poolData as any)[4] : false;
 
   // Check if user can claim
-  const canClaim = canClaimData ? canClaimData[0] : false;
-  const prizeAmount = canClaimData ? canClaimData[1] : 0n;
+  const canClaim = checkWinnerData ? (checkWinnerData as any)[0] : false;
+  const prizeAmount = checkWinnerData ? (checkWinnerData as any)[1] : 0n;
 
   // Check if predictions are locked (season started)
-  const predictionsLocked = season ? Number(season.currentRound) > 0 : false;
+  const predictionsLocked = season ? Number(season.currentRound) > 12 : false;
 
-  // Parse user prediction (returns type(uint256).max if no prediction)
-  const hasPredicted = userPrediction !== undefined && userPrediction !== BigInt(2 ** 256 - 1);
-  const predictedTeamId = hasPredicted ? Number(userPrediction) : null;
+  // Parse user prediction (timestamp > 0 means they predicted)
+  const hasPredicted = !!userPredictionData && (userPredictionData as any)[1] > 0n;
+  const predictedTeamId = hasPredicted ? Number((userPredictionData as any)[0]) : null;
+  const hasClaimed = hasPredicted && (userPredictionData as any)[2];
 
   // Set selected team from user's prediction
   useEffect(() => {
@@ -72,9 +76,9 @@ export default function Season() {
   }, [claimSuccess, prizeAmount, toast]);
 
   const handlePredict = async () => {
-    if (selectedTeam === null || !isConnected) return;
+    if (selectedTeam === null || !isConnected || !seasonId) return;
     try {
-      await makePrediction(selectedTeam);
+      await makePrediction(seasonId, selectedTeam);
     } catch (err: any) {
       console.error("Prediction failed:", err);
       toast({
@@ -88,7 +92,7 @@ export default function Season() {
   const handleClaim = async () => {
     if (!seasonId || !isConnected) return;
     try {
-      await claimPrize(seasonId);
+      await claimReward(seasonId);
     } catch (err: any) {
       console.error("Claim failed:", err);
       toast({
@@ -99,10 +103,8 @@ export default function Season() {
     }
   };
 
-  // Calculate total predictors
-  const totalPredictors = distribution
-    ? Array.from(distribution).reduce((sum, count) => sum + Number(count), 0)
-    : 0;
+  // Skip total predictors since distribution is gone
+  const totalPredictors = 0;
 
   // Fetch team names for all 20 teams
   const TEAM_IDS = Array.from({ length: 20 }, (_, i) => i);
@@ -218,7 +220,6 @@ export default function Season() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {TEAM_IDS.map((teamId) => {
           const { data: team } = useTeam(teamId);
-          const predictorCount = distribution ? Number(distribution[teamId]) : 0;
           const isSelected = selectedTeam === teamId;
           const isPredicted = predictedTeamId === teamId;
 
@@ -263,11 +264,9 @@ export default function Season() {
                 {team?.name || `Team ${teamId}`}
               </h3>
               <div className="flex items-center justify-between text-xs text-gray-500 relative z-10">
-                <span>{predictorCount} predictions</span>
-                {totalPredictors > 0 && (
-                  <span className="font-semibold text-primary">
-                    {((predictorCount / totalPredictors) * 100).toFixed(1)}%
-                  </span>
+                <span>View team details</span>
+                {isPredicted && (
+                  <span className="font-semibold text-primary">Your Pick</span>
                 )}
               </div>
 
@@ -294,7 +293,7 @@ export default function Season() {
         className="flex justify-end pt-4"
       >
         <AnimatePresence mode="wait">
-          {canClaim ? (
+          {canClaim && !hasClaimed ? (
             <motion.button
               key="claim"
               initial={{ opacity: 0, scale: 0.9 }}
@@ -328,6 +327,17 @@ export default function Season() {
                 </>
               )}
             </motion.button>
+          ) : hasClaimed ? (
+            <motion.div
+              key="claimed"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="px-8 py-4 rounded-xl font-bold bg-green-100 text-green-700 border-2 border-green-200 flex items-center gap-2"
+            >
+              <CheckCircle2 className="w-5 h-5" />
+              Reward Claimed
+            </motion.div>
           ) : hasPredicted ? (
             <motion.div
               key="predicted"

@@ -4,7 +4,7 @@
  */
 
 import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
-import { sepolia } from 'wagmi/chains';
+import { bscTestnet } from 'wagmi/chains';
 import { DEPLOYED_ADDRESSES } from '@/contracts/addresses';
 import BettingCoreABI from '@/abis/BettingCore.json';
 import { useState } from 'react';

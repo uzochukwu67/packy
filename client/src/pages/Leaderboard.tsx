@@ -57,25 +57,28 @@ export default function Leaderboard() {
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-2">
-          <div className="p-3 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-xl shadow-lg">
-            <TrendingUp className="w-6 h-6 text-white" />
+          <div className="p-3 bg-zinc-900 rounded-xl border border-white/5 shadow-lg">
+            <TrendingUp className="w-6 h-6 text-cyan-500" />
           </div>
           <div>
-            <h1 className="text-3xl font-bold font-display text-gray-900">Testnet Leaderboard</h1>
-            <p className="text-gray-500">Top players competing for mainnet rewards</p>
+            <h1 className="text-3xl font-bold font-display text-white tracking-tight">Testnet Leaderboard</h1>
+            <p className="text-zinc-500 font-medium font-body uppercase tracking-[0.2em] text-[10px]">Top players competing for mainnet rewards</p>
           </div>
         </div>
       </div>
 
       {/* Info Banner */}
-      <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200 rounded-xl p-4 mb-6">
-        <div className="flex items-start gap-3">
-          <Award className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+      <div className="bg-zinc-900 border border-white/5 rounded-2xl p-6 mb-8 relative overflow-hidden group">
+        <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+        <div className="flex items-start gap-4 relative z-10">
+          <div className="p-3 bg-cyan-500/10 rounded-xl">
+            <Award className="w-5 h-5 text-cyan-500" />
+          </div>
           <div className="text-sm">
-            <p className="font-semibold text-yellow-900 mb-1">Earn Points During Testnet!</p>
-            <p className="text-yellow-800">
-              Get <strong>1 point</strong> per bet placed and <strong>10 points</strong> per bet won.
-              Top players will receive exclusive rewards when we launch on mainnet (January 30th)!
+            <p className="font-bold text-white mb-1 uppercase tracking-widest text-[10px]">Earn Points During Testnet!</p>
+            <p className="text-zinc-400 leading-relaxed font-medium">
+              Get <span className="text-cyan-400 font-black">1 point</span> per bet placed and <span className="text-cyan-400 font-black">10 points</span> per bet won.
+              Top players will receive exclusive rewards when we launch on mainnet!
             </p>
           </div>
         </div>
@@ -91,7 +94,8 @@ export default function Leaderboard() {
             transition={{ duration: 0.4, delay: 0.1 }}
             className="flex flex-col items-center"
           >
-            <div className="w-full bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl p-6 border-2 border-gray-300 shadow-lg">
+            <div className="w-full bg-zinc-900 rounded-2xl p-6 border border-white/5 shadow-lg relative overflow-hidden group">
+              <div className="absolute inset-x-0 bottom-0 h-1 bg-zinc-600" />
               <div className="flex justify-center mb-3">
                 <Medal className="w-12 h-12 text-gray-400" />
               </div>
@@ -100,11 +104,11 @@ export default function Leaderboard() {
                 <div className="text-xs text-gray-600 mb-2 truncate" title={leaderboard[1].walletAddress}>
                   {leaderboard[1].walletAddress.slice(0, 6)}...{leaderboard[1].walletAddress.slice(-4)}
                 </div>
-                <div className="text-3xl font-bold text-gray-900 mb-1">
+                <div className="text-3xl font-black text-white mb-1">
                   {leaderboard[1].totalPoints.toLocaleString()}
                 </div>
-                <div className="text-xs text-gray-500">points</div>
-                <div className="mt-3 pt-3 border-t border-gray-300 flex justify-between text-xs text-gray-600">
+                <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">points</div>
+                <div className="mt-4 pt-4 border-t border-white/5 flex justify-between text-[10px] font-black text-zinc-500 uppercase tracking-widest">
                   <span>{leaderboard[1].betsPlaced} bets</span>
                   <span>{leaderboard[1].betsWon} won</span>
                 </div>
@@ -171,12 +175,12 @@ export default function Leaderboard() {
       )}
 
       {/* Leaderboard Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div className="bg-zinc-900 rounded-2xl shadow-xl shadow-black/20 border border-white/5 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+              <tr className="bg-white/5 border-b border-white/5">
+                <th className="px-6 py-4 text-left text-[10px] font-black text-zinc-500 uppercase tracking-widest">
                   Rank
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
@@ -252,8 +256,8 @@ export default function Leaderboard() {
                         ${parseFloat(winRate) >= 50
                           ? 'bg-green-100 text-green-800'
                           : parseFloat(winRate) >= 30
-                          ? 'bg-yellow-100 text-yellow-800'
-                          : 'bg-red-100 text-red-800'
+                            ? 'bg-yellow-100 text-yellow-800'
+                            : 'bg-red-100 text-red-800'
                         }
                       `}>
                         {winRate}%

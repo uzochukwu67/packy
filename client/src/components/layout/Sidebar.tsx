@@ -7,7 +7,7 @@ import { useLeagueBalance } from "@/hooks/contracts/useLeagueToken";
 import { useFaucet } from "@/hooks/useFaucet";
 import { useUserPoints } from "@/hooks/usePoints";
 import { useState } from "react";
-import { sepolia } from "wagmi/chains";
+import { bscTestnet } from "wagmi/chains";
 
 export function Sidebar() {
   const [location] = useLocation();
@@ -31,7 +31,7 @@ export function Sidebar() {
     if (isConnected) {
       disconnect();
     } else {
-      connect({ connector: injected(), chainId: sepolia.id });
+      connect({ connector: injected(), chainId: bscTestnet.id });
     }
   };
 

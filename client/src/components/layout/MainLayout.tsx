@@ -21,44 +21,44 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-background">
-      
+
       {/* Desktop Sidebar */}
       <Sidebar />
 
       {/* Mobile Header */}
-      <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-100 z-40 flex items-center justify-between px-4">
+      <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-zinc-950 border-b border-white/5 z-40 flex items-center justify-between px-4">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white font-bold font-display text-lg">P</div>
-          <span className="font-display font-bold text-xl text-gray-900">Phantasma</span>
+          <div className="w-8 h-8 rounded bg-white flex items-center justify-center text-black font-black font-display text-sm">P</div>
+          <span className="font-display font-bold text-xl text-white">PHANTASMA</span>
         </div>
-        
+
         <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
           <SheetTrigger>
             <Menu className="w-6 h-6 text-gray-600" />
           </SheetTrigger>
           <SheetContent side="left" className="w-[80%] p-0">
-             <div className="p-6">
-                <div className="flex items-center gap-2 mb-8">
-                  <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white font-bold font-display text-xl">P</div>
-                  <span className="font-display font-bold text-2xl text-gray-900">Phantasma</span>
-                </div>
-                <nav className="space-y-1">
-                  {navItems.map((item) => {
-                    const isActive = location === item.href;
-                    return (
-                      <Link key={item.href} href={item.href}>
-                        <div 
-                          className={cn("nav-item cursor-pointer", isActive ? "nav-item-active" : "nav-item-inactive")}
-                          onClick={() => setMobileMenuOpen(false)}
-                        >
-                          <item.icon className={cn("w-5 h-5", isActive ? "text-primary" : "text-gray-400")} />
-                          {item.label}
-                        </div>
-                      </Link>
-                    );
-                  })}
-                </nav>
-             </div>
+            <div className="p-6">
+              <div className="flex items-center gap-2 mb-8">
+                <div className="w-8 h-8 rounded bg-white flex items-center justify-center text-black font-black font-display text-sm">P</div>
+                <span className="font-display font-bold text-2xl text-white">PHANTASMA</span>
+              </div>
+              <nav className="space-y-1">
+                {navItems.map((item) => {
+                  const isActive = location === item.href;
+                  return (
+                    <Link key={item.href} href={item.href}>
+                      <div
+                        className={cn("nav-item cursor-pointer", isActive ? "nav-item-active" : "nav-item-inactive")}
+                        onClick={() => setMobileMenuOpen(false)}
+                      >
+                        <item.icon className={cn("w-5 h-5", isActive ? "text-primary" : "text-gray-400")} />
+                        {item.label}
+                      </div>
+                    </Link>
+                  );
+                })}
+              </nav>
+            </div>
           </SheetContent>
         </Sheet>
       </div>
@@ -103,7 +103,7 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
         </div> */}
 
         <div className="flex-1 p-4 md:p-8 max-w-5xl mx-auto w-full">
-           {children}
+          {children}
         </div>
       </main>
 

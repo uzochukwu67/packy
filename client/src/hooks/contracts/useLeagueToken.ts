@@ -4,7 +4,7 @@
  */
 
 import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
-import { sepolia } from 'wagmi/chains';
+import { bscTestnet } from 'wagmi/chains';
 import { DEPLOYED_ADDRESSES } from '@/contracts/addresses';
 import { formatUnits } from 'viem';
 import LeagueTokenABI from '@/abis/LeagueBetToken.json';
@@ -18,7 +18,7 @@ export function useLeagueBalance(address: `0x${string}` | undefined) {
     abi: LeagueTokenABI,
     functionName: 'balanceOf',
     args: address ? [address] : undefined,
-    chainId: sepolia.id,
+    chainId: bscTestnet.id,
     query: {
       enabled: !!address,
       refetchInterval: 10000, // Refetch every 10 seconds
@@ -46,7 +46,7 @@ export function useLeagueAllowance(owner: `0x${string}` | undefined) {
     abi: LeagueTokenABI,
     functionName: 'allowance',
     args: owner ? [owner, DEPLOYED_ADDRESSES.bettingCore] : undefined,
-    chainId: sepolia.id,
+    chainId: bscTestnet.id,
     query: {
       enabled: !!owner,
     },

@@ -569,224 +569,162 @@ export async function manualSyncRound(roundId: bigint) {
 }
 
 /**
- * Start listening to blockchain events
+ * Start listening to blockchain events using a consolidated polling loop
  */
-export function startEventListeners() {
-  log('Starting blockchain event listeners...');
+export async function startEventListeners() {
+  log('Starting blockchain event listeners (manual polling mode)...');
 
-  // ============ gameCore Events ============
+  let lastProcessedBlock: bigint;
 
-  // Listen for RoundStarted event
-  publicClient.watchContractEvent({
-    address: CONTRACTS.gameCore,
-    abi: GameCoreABI as any,
-    eventName: 'RoundStarted',
-    onLogs: async (logs: any[]) => {
-      for (const eventLog of logs) {
-        const { roundId, seasonId, startTime } = eventLog.args as any;
-        await syncRoundStart(roundId, seasonId, startTime);
+  try {
+    lastProcessedBlock = await publicClient.getBlockNumber();
+    log(`Starting event sync from block ${lastProcessedBlock}`);
+  } catch (error: any) {
+    log(`Failed to get initial block number: ${error.message}`, 'error');
+    lastProcessedBlock = BigInt(0); // Fallback
+  }
 
-        // Note: New protocol uses virtual seeding - no need to seed with LP funds
-        // The seedRoundPools() function is called automatically by game-monitor when round starts
+  const pollInterval = 10000; // 10 seconds
+
+  const poll = async () => {
+    try {
+      const currentBlock = await publicClient.getBlockNumber();
+
+      if (currentBlock <= lastProcessedBlock) {
+        return;
       }
-    },
-    onError: (error: any) => {
-      log(`RoundStarted event error: ${error.message}`, 'error');
-    },
-  });
 
-  // Listen for VRFFulfilled event
-  publicClient.watchContractEvent({
-    address: CONTRACTS.gameCore,
-    abi: GameCoreABI as any,
-    eventName: 'VRFFulfilled',
-    onLogs: async (logs: any[]) => {
-      for (const eventLog of logs) {
-        const { requestId, roundId } = eventLog.args as any;
-        await syncVRFFulfilled(requestId, roundId);
+      // Limit block range to avoid RPC limits (e.g., max 2000 blocks)
+      const fromBlock = lastProcessedBlock + BigInt(1);
+      const toBlock = currentBlock - fromBlock > BigInt(2000)
+        ? fromBlock + BigInt(2000)
+        : currentBlock;
+
+      // log(`Polling events from block ${fromBlock} to ${toBlock}...`, 'debug' as any);
+
+      // Fetch logs for gameCore
+      const gameCoreLogs = await publicClient.getLogs({
+        address: CONTRACTS.gameCore,
+        fromBlock,
+        toBlock,
+      });
+
+      // Fetch logs for bettingCore
+      const bettingCoreLogs = await publicClient.getLogs({
+        address: CONTRACTS.bettingCore,
+        fromBlock,
+        toBlock,
+      });
+
+      const allLogs = [...gameCoreLogs, ...bettingCoreLogs];
+
+      if (allLogs.length > 0) {
+        log(`Found ${allLogs.length} events in range ${fromBlock}-${toBlock}`);
       }
-    },
-    onError: (error: any) => {
-      log(`VRFFulfilled event error: ${error.message}`, 'error');
-    },
-  });
 
-  // Listen for RoundSettled event (from gameCore)
-  publicClient.watchContractEvent({
-    address: CONTRACTS.gameCore,
-    abi: GameCoreABI as any,
-    eventName: 'RoundSettled',
-    onLogs: async (logs: any[]) => {
-      for (const eventLog of logs) {
-        const { roundId } = eventLog.args as any;
-        await syncRoundSettled(roundId);
+      // Process logs
+      for (const eventLog of allLogs) {
+        try {
+          // Identify contract and event
+          const isGameCore = eventLog.address.toLowerCase() === CONTRACTS.gameCore.toLowerCase();
+          const abi = isGameCore ? GameCoreABI : BettingCoreABI;
+
+          // Decode log
+          const decodedLog = require('viem').decodeEventLog({
+            abi,
+            data: eventLog.data,
+            topics: eventLog.topics,
+          });
+
+          const eventName = decodedLog.eventName;
+          const args = decodedLog.args as any;
+
+          // Dispatch to handlers
+          if (isGameCore) {
+            switch (eventName) {
+              case 'RoundStarted':
+                await syncRoundStart(args.roundId, args.seasonId, args.startTime);
+                break;
+              case 'VRFFulfilled':
+                await syncVRFFulfilled(args.requestId, args.roundId);
+                break;
+              case 'RoundSettled':
+                await syncRoundSettled(args.roundId);
+                break;
+            }
+          } else {
+            switch (eventName) {
+              case 'BetPlaced':
+                await syncBetPlaced(
+                  args.betId,
+                  args.bettor,
+                  args.roundId,
+                  args.amount,
+                  args.parlayMultiplier,
+                  args.legCount
+                );
+                break;
+              case 'WinningsClaimed':
+                await syncWinningsClaimed(args.betId, args.bettor);
+                break;
+              case 'BetLost':
+                await syncBetLost(args.betId, args.bettor);
+                break;
+              case 'BetCancelled':
+                await syncBetCancelled(args.betId, args.bettor, args.refundAmount);
+                break;
+              case 'BountyClaim':
+                await syncBountyClaim(
+                  args.betId,
+                  args.claimer,
+                  args.bounty,
+                  args.winner,
+                  args.winnerAmount,
+                  eventLog.transactionHash!
+                );
+                break;
+              case 'RoundPoolSwept':
+                await syncRoundPoolSwept(
+                  args.roundId,
+                  args.remaining,
+                  args.protocolShare,
+                  args.seasonShare,
+                  eventLog.transactionHash!
+                );
+                break;
+              case 'RoundSettled':
+                await syncRoundSettled(args.roundId);
+                break;
+              case 'RoundSeeded':
+                await syncRoundSeeded(args.roundId);
+                break;
+              case 'OddsLocked':
+                await syncOddsLocked(args.roundId);
+                break;
+            }
+          }
+        } catch (decodeError: any) {
+          // Ignore logs that don't match our ABI/Events
+          // log(`Skipping unknown event: ${decodeError.message}`, 'debug' as any);
+        }
       }
-    },
-    onError: (error: any) => {
-      log(`RoundSettled event error: ${error.message}`, 'error');
-    },
-  });
 
-  // Also listen for RoundSettled from bettingCore (emitted during settleRound)
-  publicClient.watchContractEvent({
-    address: CONTRACTS.bettingCore,
-    abi: BettingCoreABI as any,
-    eventName: 'RoundSettled',
-    onLogs: async (logs: any[]) => {
-      for (const eventLog of logs) {
-        const { roundId } = eventLog.args as any;
-        await syncRoundSettled(roundId);
+      lastProcessedBlock = toBlock;
+
+    } catch (error: any) {
+      if (error.message && (error.message.includes('ECONNRESET') || error.message.includes('timeout'))) {
+        log(`Polling transient error: ${error.message}`, 'warn');
+      } else {
+        log(`Polling error: ${error.message}`, 'error');
       }
-    },
-    onError: (error: any) => {
-      log(`bettingCore RoundSettled event error: ${error.message}`, 'error');
-    },
-  });
+    } finally {
+      // Schedule next poll
+      setTimeout(poll, pollInterval);
+    }
+  };
 
-  // ============ bettingCore Events ============
+  // Start the loop
+  poll();
 
-  // Listen for BetPlaced event
-  publicClient.watchContractEvent({
-    address: CONTRACTS.bettingCore,
-    abi: BettingCoreABI as any,
-    eventName: 'BetPlaced',
-    onLogs: async (logs: any[]) => {
-      for (const eventLog of logs) {
-        const {
-          betId,
-          bettor,
-          roundId,
-          amount,
-          parlayMultiplier,
-          legCount
-        } = eventLog.args as any;
-
-        await syncBetPlaced(
-          betId,
-          bettor,
-          roundId,
-          amount,
-          parlayMultiplier,
-          legCount
-        );
-      }
-    },
-    onError: (error: any) => {
-      log(`BetPlaced event error: ${error.message}`, 'error');
-    },
-  });
-
-  // Listen for WinningsClaimed event
-  publicClient.watchContractEvent({
-    address: CONTRACTS.bettingCore,
-    abi: BettingCoreABI as any,
-    eventName: 'WinningsClaimed',
-    onLogs: async (logs: any[]) => {
-      for (const eventLog of logs) {
-        const { betId, bettor } = eventLog.args as any;
-        await syncWinningsClaimed(betId, bettor);
-      }
-    },
-    onError: (error: any) => {
-      log(`WinningsClaimed event error: ${error.message}`, 'error');
-    },
-  });
-
-  // Listen for BetLost event
-  publicClient.watchContractEvent({
-    address: CONTRACTS.bettingCore,
-    abi: BettingCoreABI as any,
-    eventName: 'BetLost',
-    onLogs: async (logs: any[]) => {
-      for (const eventLog of logs) {
-        const { betId } = eventLog.args as any;
-        await syncBetLost(betId, eventLog.args.bettor);
-      }
-    },
-    onError: (error: any) => {
-      log(`BetLost event error: ${error.message}`, 'error');
-    },
-  });
-
-  // Listen for BetCancelled event
-  publicClient.watchContractEvent({
-    address: CONTRACTS.bettingCore,
-    abi: BettingCoreABI as any,
-    eventName: 'BetCancelled',
-    onLogs: async (logs: any[]) => {
-      for (const eventLog of logs) {
-        const { betId, bettor, refundAmount } = eventLog.args as any;
-        await syncBetCancelled(betId, bettor, refundAmount);
-      }
-    },
-    onError: (error: any) => {
-      log(`BetCancelled event error: ${error.message}`, 'error');
-    },
-  });
-
-  // Listen for BountyClaim event
-  publicClient.watchContractEvent({
-    address: CONTRACTS.bettingCore,
-    abi: BettingCoreABI as any,
-    eventName: 'BountyClaim',
-    onLogs: async (logs: any[]) => {
-      for (const eventLog of logs) {
-        const { betId, claimer, bounty, winner, winnerAmount } = eventLog.args as any;
-        await syncBountyClaim(betId, claimer, bounty, winner, winnerAmount, eventLog.transactionHash);
-      }
-    },
-    onError: (error: any) => {
-      log(`BountyClaim event error: ${error.message}`, 'error');
-    },
-  });
-
-  // Listen for RoundPoolSwept event
-  publicClient.watchContractEvent({
-    address: CONTRACTS.bettingCore,
-    abi: BettingCoreABI as any,
-    eventName: 'RoundPoolSwept',
-    onLogs: async (logs: any[]) => {
-      for (const eventLog of logs) {
-        const { roundId, remaining, protocolShare, seasonShare } = eventLog.args as any;
-        await syncRoundPoolSwept(roundId, remaining, protocolShare, seasonShare, eventLog.transactionHash);
-      }
-    },
-    onError: (error: any) => {
-      log(`RoundPoolSwept event error: ${error.message}`, 'error');
-    },
-  });
-
-  // Listen for RoundSeeded event
-  publicClient.watchContractEvent({
-    address: CONTRACTS.bettingCore,
-    abi: BettingCoreABI as any,
-    eventName: 'RoundSeeded',
-    onLogs: async (logs: any[]) => {
-      for (const eventLog of logs) {
-        const { roundId } = eventLog.args as any;
-        await syncRoundSeeded(roundId);
-      }
-    },
-    onError: (error: any) => {
-      log(`RoundSeeded event error: ${error.message}`, 'error');
-    },
-  });
-
-  // Listen for OddsLocked event
-  publicClient.watchContractEvent({
-    address: CONTRACTS.bettingCore,
-    abi: BettingCoreABI as any,
-    eventName: 'OddsLocked',
-    onLogs: async (logs: any[]) => {
-      for (const eventLog of logs) {
-        const { roundId } = eventLog.args as any;
-        await syncOddsLocked(roundId);
-      }
-    },
-    onError: (error: any) => {
-      log(`OddsLocked event error: ${error.message}`, 'error');
-    },
-  });
-
-  log('✅ Blockchain event listeners started (gameCore + bettingCore with bounty/sweep tracking)');
+  log('✅ Blockchain event synchronization initialized (Consolidated Polling)');
 }

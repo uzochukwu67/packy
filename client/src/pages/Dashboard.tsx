@@ -173,25 +173,25 @@ export default function Dashboard() {
           {/* Bottom Row: Stats Cards */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="bg-white rounded-xl p-3 shadow-sm border border-primary/10">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Season</p>
-                <p className="text-2xl font-bold text-primary">{seasonId?.toString() || '—'}</p>
+              <div className="bg-zinc-900/50 rounded-xl p-3 shadow-sm border border-white/5">
+                <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Season</p>
+                <p className="text-2xl font-bold text-white">{seasonId?.toString() || '—'}</p>
               </div>
-              <div className="bg-white rounded-xl p-3 shadow-sm border border-primary/10">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Round</p>
-                <p className="text-2xl font-bold text-primary">{roundId?.toString() || '—'}</p>
+              <div className="bg-zinc-900/50 rounded-xl p-3 shadow-sm border border-white/5">
+                <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Round</p>
+                <p className="text-2xl font-bold text-white">{roundId?.toString() || '—'}</p>
               </div>
-              <div className="bg-white rounded-xl p-3 shadow-sm border border-primary/10">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Matches</p>
-                <p className="text-2xl font-bold text-gray-900">{matches?.length || 0}</p>
+              <div className="bg-zinc-900/50 rounded-xl p-3 shadow-sm border border-white/5">
+                <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Matches</p>
+                <p className="text-2xl font-bold text-white">{matches?.length || 0}</p>
               </div>
-              <div className="bg-white rounded-xl p-3 shadow-sm border border-primary/10">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Pool</p>
-                <p className="text-2xl font-bold text-green-600">{formatLBT(pool?.totalLocked)} <span className="text-xs font-normal text-gray-400">LBT</span></p>
+              <div className="bg-zinc-900/50 rounded-xl p-3 shadow-sm border border-cyan-500/20">
+                <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Total Pool</p>
+                <p className="text-2xl font-bold text-cyan-400">{formatLBT(pool?.totalLocked)} <span className="text-xs font-normal text-zinc-600">LBT</span></p>
               </div>
-              <div className="bg-white rounded-xl p-3 shadow-sm border border-primary/10">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Remaining</p>
-                <p className="text-2xl font-bold text-blue-600">{formatLBT(pool?.remaining)} <span className="text-xs font-normal text-gray-400">LBT</span></p>
+              <div className="bg-zinc-900/50 rounded-xl p-3 shadow-sm border border-white/5">
+                <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Remaining</p>
+                <p className="text-2xl font-bold text-zinc-400">{formatLBT(pool?.remaining)} <span className="text-xs font-normal text-zinc-600">LBT</span></p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -238,7 +238,7 @@ export default function Dashboard() {
         <div className="flex gap-3">
           <button
             onClick={() => refetchGame()}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-border rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-white/10 rounded-xl text-sm font-bold text-zinc-400 hover:text-white hover:border-cyan-500/50 transition-all"
           >
 
             <RefreshCw className="w-4 h-4" />

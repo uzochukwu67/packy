@@ -1,54 +1,34 @@
 import { useAccount } from "wagmi";
-import { useEffect, useState } from "react";
-import { Loader2, Ticket, ExternalLink, CheckCircle2, Trophy } from "lucide-react";
+import { Loader2, Ticket, ExternalLink, CheckCircle2, Trophy, XCircle, Clock, AlertCircle } from "lucide-react";
 import { formatToken } from "@/contracts/types";
 import { formatDistance } from "date-fns";
-import { useClaimWinnings } from "@/hooks/contracts/useBettingCore";
+import {
+  useUserBets,
+  useCompleteBetInfo,
+  useClaimWinnings,
+  useCancelBet,
+  useRoundMetadata,
+  formatLBT
+} from "@/hooks/contracts/useBettingCore";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 
-interface Bet {
-  id: number;
-  betId: string;
-  bettor: string;
-  seasonId: string;
-  roundId: string;
-  amount: string;
-  matchIndices: number[];
-  outcomes: number[];
-  parlayMultiplier: string;
-  potentialWinnings: string;
-  status: string;
-  txHash: string;
-  placedAt: string;
-  settledAt: string | null;
+interface BetCardProps {
+  betId: bigint;
+  onActionSuccess?: () => void;
 }
 
-// Component for individual bet row with claim functionality
-function BetRow({ bet, onClaimed }: { bet: Bet; onClaimed: () => void }) {
+function BetCard({ betId, onActionSuccess }: BetCardProps) {
   const { toast } = useToast();
-  const { claimWinnings, isConfirming, isSuccess } = useClaimWinnings();
-
-  const won = bet.status === 'won';
-  const finalPayout = BigInt(bet.potentialWinnings);
-
-  useEffect(() => {
-    if (isSuccess) {
-      toast({
-        title: "Winnings Claimed! 🎉",
-        description: `You received ${formatToken(finalPayout)} LBT tokens!`,
-        className: "bg-green-50 border-green-200 text-green-900",
-      });
-      onClaimed();
-    }
-  }, [isSuccess, finalPayout, toast, onClaimed]);
+  const { bet, claimStatus, roundMetadata, isLoading } = useCompleteBetInfo(betId);
+  const { claimWinnings, isConfirming: isClaiming, isSuccess: isClaimSuccess } = useClaimWinnings();
+  const { cancelBet, isConfirming: isCancelling, isSuccess: isCancelSuccess } = useCancelBet();
 
   const handleClaim = async () => {
     try {
-      await claimWinnings(BigInt(bet.betId));
+      await claimWinnings(betId);
     } catch (err: any) {
-      console.error("Claim failed:", err);
       toast({
         title: "Claim Failed",
         description: err.message || "Failed to claim winnings.",
@@ -57,159 +37,133 @@ function BetRow({ bet, onClaimed }: { bet: Bet; onClaimed: () => void }) {
     }
   };
 
-  const stakeAmount = parseFloat(formatToken(BigInt(bet.amount)));
-  const potentialWinnings = parseFloat(formatToken(BigInt(bet.potentialWinnings)));
-  const parlayMultiplier = parseFloat(formatToken(BigInt(bet.parlayMultiplier)));
-
-  const getOutcomeLabel = (outcome: number) => {
-    if (outcome === 1) return "Home";
-    if (outcome === 2) return "Away";
-    return "Draw";
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'won':
-        return 'bg-green-100 text-green-700 border-green-200';
-      case 'lost':
-        return 'bg-red-100 text-red-700 border-red-200';
-      case 'claimed':
-        return 'bg-blue-100 text-blue-700 border-blue-200';
-      default:
-        return 'bg-yellow-100 text-yellow-700 border-yellow-200';
-    }
-  };
-
-  const formatBetDate = (dateString: string) => {
+  const handleCancel = async () => {
     try {
-      const date = new Date(dateString);
-      return formatDistance(date, new Date(), { addSuffix: true });
-    } catch {
-      return dateString;
+      await cancelBet(betId);
+    } catch (err: any) {
+      toast({
+        title: "Cancellation Failed",
+        description: err.message || "Bets can only be cancelled before the round starts.",
+        variant: "destructive",
+      });
     }
   };
 
-  const showClaimButton = won && bet.status === 'won';
+  if (isLoading) {
+    return (
+      <div className="bg-white rounded-2xl border border-gray-100 p-6 flex items-center justify-center min-h-[160px]">
+        <Loader2 className="w-6 h-6 animate-spin text-primary/40" />
+      </div>
+    );
+  }
+
+  if (!bet || !claimStatus) return null;
+
+  // Determine status based on blockchain data
+  const getStatus = () => {
+    if (bet.status === 3) return { label: 'Cancelled', color: 'bg-gray-100 text-gray-500 border-gray-200', icon: XCircle };
+    if (claimStatus.isClaimed) return { label: 'Claimed', color: 'bg-blue-100 text-blue-700 border-blue-200', icon: CheckCircle2 };
+
+    // Check if settled
+    if (roundMetadata?.settled) {
+      if (claimStatus.isWon) return { label: 'Won', color: 'bg-green-100 text-green-700 border-green-200', icon: Trophy, canClaim: true };
+      return { label: 'Lost', color: 'bg-red-50 text-red-500 border-red-100', icon: AlertCircle };
+    }
+
+    // Pending status (active)
+    const canCancel = Date.now() / 1000 < Number(roundMetadata?.roundStartTime || 0);
+    return { label: 'Pending', color: 'bg-yellow-100 text-yellow-700 border-yellow-200', icon: Clock, canCancel };
+  };
+
+  const status = getStatus();
+  const Icon = status.icon;
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="grid grid-cols-12 gap-4 p-4 items-center hover:bg-gray-50/50 transition-colors border-b border-gray-100 last:border-b-0"
+      className="bg-white rounded-2xl border border-border overflow-hidden hover:border-primary/30 transition-all hover:shadow-md group"
     >
-      {/* Bet Details */}
-      <div className="col-span-12 md:col-span-3">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-xs font-mono text-gray-400">#{bet.betId}</span>
-          <a
-            href={`https://sepolia.etherscan.io/tx/${bet.txHash}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-primary hover:text-primary/80 transition-colors"
-          >
-            <ExternalLink className="w-3 h-3" />
-          </a>
-        </div>
-        <p className="text-xs text-gray-500">{formatBetDate(bet.placedAt)}</p>
-      </div>
-
-      {/* Round */}
-      <div className="col-span-6 md:col-span-2 text-center">
-        <span className="inline-block bg-secondary px-2 py-1 rounded-md text-xs font-medium text-gray-700">
-          S{bet.seasonId} • R{bet.roundId}
-        </span>
-      </div>
-
-      {/* Selections */}
-      <div className="col-span-6 md:col-span-2 text-center">
-        <div className="space-y-1">
-          {bet.matchIndices.length === 1 ? (
-            <span className="inline-block bg-blue-50 px-2 py-1 rounded text-xs font-medium text-blue-700">
-              Single: M{bet.matchIndices[0]} • {getOutcomeLabel(bet.outcomes[0])}
-            </span>
-          ) : (
-            <>
-              <span className="inline-block bg-purple-50 px-2 py-1 rounded text-xs font-bold text-purple-700">
-                {bet.matchIndices.length}-Leg Parlay
-              </span>
-              <div className="text-[10px] text-gray-500">
-                {bet.matchIndices.slice(0, 3).map((idx, i) => (
-                  <span key={i} className="block">
-                    M{idx}: {getOutcomeLabel(bet.outcomes[i])}
-                  </span>
-                ))}
-                {bet.matchIndices.length > 3 && (
-                  <span className="block text-gray-400">+{bet.matchIndices.length - 3} more</span>
-                )}
+      <div className="p-6">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+          <div className="flex items-center gap-3">
+            <div className={cn("p-2.5 rounded-xl border border-transparent", status.color)}>
+              <Icon className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-gray-900 leading-none">Bet #{betId.toString()}</span>
+                <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider", status.color)}>
+                  {status.label}
+                </span>
               </div>
-            </>
-          )}
+              <p className="text-xs text-gray-500 mt-1">
+                Placed {formatDistance(new Date(Number(bet.timestamp) * 1000), new Date(), { addSuffix: true })}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4 self-end md:self-auto">
+            <div className="text-right">
+              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Stake</p>
+              <p className="text-lg font-mono font-bold text-gray-900">{formatLBT(bet.amount)} <span className="text-xs font-normal text-gray-400">LBT</span></p>
+            </div>
+            <div className="w-px h-8 bg-gray-100" />
+            <div className="text-right">
+              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Potential Return</p>
+              <p className={cn(
+                "text-lg font-mono font-bold",
+                status.label === 'Won' || status.label === 'Claimed' ? "text-green-600" : "text-gray-900"
+              )}>
+                {formatLBT(claimStatus.totalPayout || bet.potentialPayout)} <span className="text-xs font-normal text-gray-400">LBT</span>
+              </p>
+            </div>
+          </div>
         </div>
-      </div>
 
-      {/* Stake */}
-      <div className="col-span-4 md:col-span-2 text-center">
-        <p className="font-mono text-sm font-bold text-gray-900">
-          {stakeAmount.toFixed(2)}
-        </p>
-        <p className="text-xs text-gray-500">LBT</p>
-      </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-50 px-3 py-1.5 rounded-lg w-fit">
+              <Ticket className="w-3 h-3" />
+              <span>Round {bet.roundId.toString()}</span>
+              <span className="text-gray-300">•</span>
+              <span>{bet.legCount} Leg {bet.legCount > 1 ? 'Parlay' : 'Single'}</span>
+            </div>
+          </div>
 
-      {/* Status / Action */}
-      <div className="col-span-4 md:col-span-2 text-center">
-        {showClaimButton ? (
-          <button
-            onClick={handleClaim}
-            disabled={isConfirming}
-            className={cn(
-              "inline-flex items-center px-3 py-1.5 rounded-full text-xs font-bold transition-all",
-              isConfirming
-                ? "bg-gray-200 text-gray-500"
-                : isSuccess
-                ? "bg-green-100 text-green-700 border border-green-200"
-                : "bg-green-500 text-white hover:bg-green-600 shadow-sm hover:shadow-md"
+          <div className="flex justify-end gap-2">
+            {status.canCancel && (
+              <button
+                onClick={handleCancel}
+                disabled={isCancelling}
+                className="px-4 py-2 rounded-xl text-xs font-bold border border-red-100 text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {isCancelling ? <Loader2 className="w-3 h-3 animate-spin" /> : <XCircle className="w-3 h-3" />}
+                Cancel Bet
+              </button>
             )}
-          >
-            {isConfirming ? (
-              <>
-                <Loader2 className="w-3 h-3 animate-spin mr-1" />
-                Claiming...
-              </>
-            ) : isSuccess ? (
-              <>
-                <CheckCircle2 className="w-3 h-3 mr-1" />
-                Claimed!
-              </>
-            ) : (
-              <>
-                <Trophy className="w-3 h-3 mr-1" />
-                Claim
-              </>
-            )}
-          </button>
-        ) : (
-          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold capitalize border ${getStatusColor(bet.status)}`}>
-            {bet.status}
-          </span>
-        )}
-        {bet.matchIndices.length > 1 && (
-          <p className="text-[10px] text-purple-600 mt-1">
-            {parlayMultiplier.toFixed(2)}x bonus
-          </p>
-        )}
-      </div>
 
-      {/* Payout */}
-      <div className="col-span-4 md:col-span-1 text-right">
-        <p className={cn(
-          "font-mono text-sm font-bold",
-          bet.status === 'won' || bet.status === 'claimed' ? 'text-green-600' : bet.status === 'lost' ? 'text-gray-400' : 'text-gray-900'
-        )}>
-          {bet.status === 'lost' ? '-' : potentialWinnings.toFixed(2)}
-        </p>
-        {bet.status !== 'lost' && (
-          <p className="text-xs text-gray-500">LBT</p>
-        )}
+            {status.canClaim && (
+              <button
+                onClick={handleClaim}
+                disabled={isClaiming}
+                className="px-6 py-2 rounded-xl text-xs font-bold bg-green-500 text-white hover:bg-green-600 transition-all shadow-sm hover:shadow-md disabled:opacity-50 flex items-center gap-2"
+              >
+                {isClaiming ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trophy className="w-3 h-3" />}
+                Claim Winnings
+              </button>
+            )}
+
+            <a
+              href={`https://testnet.bscscan.com/address/${bet.bettor}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-2 rounded-xl border border-gray-100 text-gray-400 hover:text-primary hover:border-primary/20 transition-all"
+            >
+              <ExternalLink className="w-4 h-4" />
+            </a>
+          </div>
+        </div>
       </div>
     </motion.div>
   );
@@ -217,52 +171,25 @@ function BetRow({ bet, onClaimed }: { bet: Bet; onClaimed: () => void }) {
 
 export default function MyBets() {
   const { address, isConnected } = useAccount();
-  const [bets, setBets] = useState<Bet[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data: betIds, isLoading } = useUserBets(address);
 
-  const fetchBets = async () => {
-    if (!address) {
-      setLoading(false);
-      return;
-    }
-
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await fetch(`/api/bets/${address}`);
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch bets');
-      }
-
-      const data = await response.json();
-      setBets(data);
-    } catch (err: any) {
-      console.error('Error fetching bets:', err);
-      setError(err.message || 'Failed to load bets');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchBets();
-  }, [address]);
+  // Reverse IDs to show newest first
+  const sortedBetIds = betIds ? [...(betIds as bigint[])].reverse() : [];
 
   if (!isConnected) {
     return (
-      <div className="space-y-8 animate-in fade-in duration-500">
+      <div className="max-w-4xl mx-auto space-y-8 py-8 animate-in fade-in duration-500">
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="flex flex-col items-center justify-center p-12 bg-white rounded-2xl border border-border shadow-sm"
+          className="flex flex-col items-center justify-center p-16 bg-white rounded-3xl border border-border shadow-sm text-center"
         >
-          <Ticket className="w-16 h-16 text-gray-300 mb-4" />
-          <h2 className="text-xl font-bold text-gray-900 mb-2">Wallet Not Connected</h2>
-          <p className="text-gray-500 text-center max-w-md">
-            Please connect your wallet to view your betting history.
+          <div className="w-20 h-20 bg-gray-50 rounded-2xl flex items-center justify-center mb-6">
+            <Ticket className="w-10 h-10 text-gray-300" />
+          </div>
+          <h2 className="text-2xl font-display font-bold text-gray-900 mb-2">Connect Your Wallet</h2>
+          <p className="text-gray-500 max-w-sm">
+            Connect your wallet to track your betting history, check results, and claim your winnings.
           </p>
         </motion.div>
       </div>
@@ -270,81 +197,43 @@ export default function MyBets() {
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col md:flex-row md:items-end justify-between gap-4"
-      >
+    <div className="max-w-4xl mx-auto space-y-8 py-8 animate-in fade-in duration-500">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 px-4">
         <div>
-          <h1 className="text-3xl font-display font-bold text-gray-900 mb-2">My Bets</h1>
-          <p className="text-muted-foreground">Track your betting history and claim winnings.</p>
+          <h1 className="text-4xl font-display font-bold text-gray-900 tracking-tight">My Bets</h1>
+          <p className="text-gray-500 mt-2">Historical view of your Protocol V3.0 betting activity.</p>
         </div>
-        {bets.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="flex items-center gap-2 text-sm text-gray-500 bg-white px-4 py-2 rounded-xl border border-border shadow-sm"
-          >
+        {sortedBetIds.length > 0 && (
+          <div className="bg-white px-4 py-2 rounded-2xl border border-border shadow-sm flex items-center gap-2">
             <Ticket className="w-4 h-4 text-primary" />
-            <span className="font-bold text-gray-900">{bets.length}</span> total bets
-          </motion.div>
+            <span className="text-sm font-bold text-gray-900">{sortedBetIds.length}</span>
+            <span className="text-sm text-gray-500">Total Bets</span>
+          </div>
         )}
-      </motion.div>
+      </div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden"
-      >
-        {loading ? (
-          <div className="flex items-center justify-center p-12">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      <div className="space-y-4 px-4">
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-24 gap-4">
+            <Loader2 className="w-10 h-10 animate-spin text-primary/20" />
+            <p className="text-sm text-gray-400 font-medium animate-pulse">Syncing with blockchain...</p>
           </div>
-        ) : error ? (
-          <div className="p-12 text-center">
-            <p className="text-red-500 mb-2 font-semibold">Error loading bets</p>
-            <p className="text-sm text-gray-500">{error}</p>
-            <button
-              onClick={fetchBets}
-              className="mt-4 px-4 py-2 bg-primary text-white rounded-xl hover:bg-primary/90 transition-colors"
-            >
-              Retry
-            </button>
-          </div>
-        ) : bets.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-12 text-center">
-            <Ticket className="w-16 h-16 text-gray-200 mb-4" />
-            <h3 className="text-lg font-bold text-gray-900 mb-2">No bets yet</h3>
-            <p className="text-sm text-gray-500 max-w-md">
-              Start placing bets on matches to see them appear here.
+        ) : sortedBetIds.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-24 bg-white rounded-3xl border border-border border-dashed">
+            <Ticket className="w-16 h-16 text-gray-100 mb-4" />
+            <h3 className="text-lg font-bold text-gray-900">No bets found</h3>
+            <p className="text-sm text-gray-400 max-w-xs text-center mt-1">
+              You haven't placed any bets yet. Head over to the dashboard to start playing!
             </p>
           </div>
         ) : (
-          <>
-            {/* Table Header - Hidden on mobile */}
-            <div className="hidden md:grid grid-cols-12 gap-4 p-4 border-b border-border bg-gray-50 text-xs font-bold text-gray-500 uppercase tracking-wider">
-              <div className="col-span-3">Bet Details</div>
-              <div className="col-span-2 text-center">Round</div>
-              <div className="col-span-2 text-center">Selections</div>
-              <div className="col-span-2 text-center">Stake</div>
-              <div className="col-span-2 text-center">Status</div>
-              <div className="col-span-1 text-right">Payout</div>
-            </div>
-
-            {/* Table Body */}
-            <div>
-              {bets.map((bet, index) => (
-                <BetRow
-                  key={bet.id}
-                  bet={bet}
-                  onClaimed={fetchBets}
-                />
-              ))}
-            </div>
-          </>
+          <div className="grid gap-4">
+            {sortedBetIds.map((id) => (
+              <BetCard key={id.toString()} betId={id} />
+            ))}
+          </div>
         )}
-      </motion.div>
+      </div>
     </div>
   );
 }

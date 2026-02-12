@@ -4,6 +4,7 @@
  */
 
 import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { bscTestnet } from 'wagmi/chains';
 import GameCoreABI from '@/abis/GameCore.json';
 import { DEPLOYED_ADDRESSES } from '@/contracts/addresses';
 
@@ -54,6 +55,7 @@ export function useCurrentSeason() {
     address: GAME_CORE_ADDRESS,
     abi: GameCoreABI,
     functionName: 'getCurrentSeason',
+    chainId: bscTestnet.id,
     query: {
       refetchInterval: 30000, // Refetch every 30s
     },
@@ -68,6 +70,7 @@ export function useCurrentRound() {
     address: GAME_CORE_ADDRESS,
     abi: GameCoreABI,
     functionName: 'getCurrentRound',
+    chainId: bscTestnet.id,
     query: {
       refetchInterval: 15000, // Refetch every 15s
     },

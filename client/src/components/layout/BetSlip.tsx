@@ -167,11 +167,11 @@ export function BetSlip() {
     return (
       <button
         onClick={toggleSlip}
-        className="fixed bottom-6 right-6 z-50 md:hidden bg-primary text-white p-4 rounded-full shadow-xl shadow-primary/30"
+        className="fixed bottom-6 right-6 z-50 md:hidden bg-cyan-500 text-black p-4 rounded-full shadow-xl shadow-cyan-500/30"
       >
         <Ticket className="w-6 h-6" />
         {bets.length > 0 && (
-          <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-[10px] flex items-center justify-center font-bold">
+          <span className="absolute -top-1 -right-1 w-5 h-5 bg-white text-black rounded-full text-[10px] flex items-center justify-center font-bold">
             {bets.length}
           </span>
         )}
@@ -180,49 +180,51 @@ export function BetSlip() {
   }
 
   return (
-    <div className="w-80 bg-white border-l border-border h-screen sticky top-0 hidden lg:flex flex-col shadow-[-4px_0_20px_rgba(0,0,0,0.02)]">
-      <div className="p-5 border-b border-border bg-gray-50/50 flex items-center justify-between">
+    <div className="w-80 bg-zinc-950 border-l border-white/5 h-screen sticky top-0 hidden lg:flex flex-col backdrop-blur-xl">
+      <div className="p-5 border-b border-white/5 bg-white/5 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+          <div className="w-8 h-8 rounded-xl bg-cyan-500/10 flex items-center justify-center text-cyan-500">
             <Ticket className="w-4 h-4" />
           </div>
-          <h2 className="font-display font-bold text-lg">Bet Slip</h2>
+          <h2 className="font-display font-bold text-lg text-white">Bet Slip</h2>
         </div>
-        <span className="bg-primary/10 text-primary px-2.5 py-0.5 rounded-full text-xs font-bold">
-          {bets.length}
+        <span className="bg-white/10 text-white px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-widest uppercase">
+          {bets.length} SELS
         </span>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <AnimatePresence>
           {bets.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center p-8 text-muted-foreground">
-              <Ticket className="w-12 h-12 mb-4 opacity-20" />
-              <p className="text-sm">Your slip is empty.</p>
-              <p className="text-xs mt-1 opacity-70">Select odds from any match to start betting.</p>
+            <div className="h-full flex flex-col items-center justify-center text-center p-8 text-zinc-500">
+              <Ticket className="w-12 h-12 mb-4 opacity-10" />
+              <p className="text-sm font-bold">Empty Slip</p>
+              <p className="text-[10px] mt-1 opacity-70 uppercase tracking-widest leading-loose">Select odds from any match <br /> to start betting.</p>
             </div>
           ) : (
             bets.map((bet) => (
               <motion.div
                 key={bet.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, x: -10 }}
-                className="bg-secondary/50 rounded-xl p-3 border border-border group hover:border-primary/30 transition-colors"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                className="bg-zinc-900 rounded-xl p-3 border border-white/5 group hover:border-cyan-500/30 transition-colors"
               >
                 <div className="flex justify-between items-start mb-1">
-                  <span className="text-xs font-medium text-gray-500">{bet.matchTitle}</span>
+                  <span className="text-[10px] font-bold text-zinc-600 uppercase tracking-wider">{bet.matchTitle}</span>
                   <button
                     onClick={() => removeBet(bet.id)}
-                    className="text-gray-400 hover:text-red-500 transition-colors"
+                    className="text-zinc-700 hover:text-red-500 transition-colors"
                     disabled={isPending || isConfirming}
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="font-bold text-gray-900">{bet.selection}</span>
-                  <span className="bg-white px-2 py-1 rounded-md text-sm font-bold text-primary shadow-sm border border-gray-100">
+                  <div className="flex flex-col">
+                    <span className="font-bold text-white text-sm">{bet.selection}</span>
+                  </div>
+                  <span className="bg-zinc-800 px-2 py-1 rounded text-sm font-mono font-bold text-cyan-400 border border-white/5">
                     {bet.odds.toFixed(2)}
                   </span>
                 </div>
@@ -232,17 +234,17 @@ export function BetSlip() {
         </AnimatePresence>
       </div>
 
-      <div className="p-5 border-t border-border bg-gray-50/50 space-y-4">
+      <div className="p-5 border-t border-white/5 bg-white/5 space-y-4">
         {bets.length > 0 && (
           <>
             <div className="space-y-3">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Total Odds</span>
-                <span className="font-bold font-mono">{formattedOdds}</span>
+              <div className="flex justify-between text-xs">
+                <span className="text-zinc-500 font-bold uppercase tracking-widest">Total Odds</span>
+                <span className="font-black font-mono text-cyan-400 text-sm">{formattedOdds}</span>
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Stake (LBT)</label>
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Stake (LBT)</label>
                 <div className="relative">
                   <input
                     type="number"
@@ -251,15 +253,15 @@ export function BetSlip() {
                     value={stake}
                     onChange={(e) => setStake(parseFloat(e.target.value) || 0)}
                     disabled={isPending || isConfirming}
-                    className="w-full pl-3 pr-16 py-2.5 bg-white border border-input rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary font-mono text-sm disabled:opacity-50"
+                    className="w-full pl-3 pr-16 py-3 bg-zinc-900 border border-white/5 rounded-xl focus:outline-none focus:ring-1 focus:ring-cyan-500/50 focus:border-cyan-500/50 font-mono text-sm text-white disabled:opacity-50"
                   />
-                  <span className="absolute right-3 top-2.5 text-xs font-bold text-gray-400">LBT</span>
+                  <span className="absolute right-3 top-3 text-[10px] font-black text-zinc-600">LBT</span>
                 </div>
               </div>
 
-              <div className="flex justify-between items-center p-3 bg-green-50 rounded-xl border border-green-100">
-                <span className="text-xs font-bold text-green-700 uppercase">Potential Return</span>
-                <div className="font-bold text-green-700 font-mono">{formattedReturn} LBT</div>
+              <div className="flex justify-between items-center p-4 bg-cyan-500/5 rounded-xl border border-cyan-500/10">
+                <span className="text-[10px] font-black text-cyan-500 uppercase tracking-widest">Potential Return</span>
+                <div className="font-black text-cyan-400 font-mono text-lg">{formattedReturn}</div>
               </div>
             </div>
 
@@ -267,7 +269,7 @@ export function BetSlip() {
               <button
                 onClick={clearSlip}
                 disabled={isPending || isConfirming || approvePending || isApproving}
-                className="col-span-1 flex items-center justify-center rounded-xl border border-red-200 text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="col-span-1 flex items-center justify-center rounded-xl bg-zinc-900 border border-white/5 text-zinc-700 hover:text-red-500 hover:border-red-500/30 transition-all disabled:opacity-50"
               >
                 <Trash2 className="w-4 h-4" />
               </button>
@@ -277,23 +279,23 @@ export function BetSlip() {
                   onClick={handleApprove}
                   disabled={!stake || !isConnected || approvePending || isApproving}
                   className={cn(
-                    "col-span-3 py-3 rounded-xl font-bold text-white shadow-lg active:translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2",
+                    "col-span-3 py-4 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2",
                     approvePending || isApproving
-                      ? "bg-gray-400"
+                      ? "bg-zinc-800 text-zinc-500"
                       : approveSuccess
-                        ? "bg-green-500"
-                        : "bg-blue-500 hover:bg-blue-600 shadow-blue-500/20"
+                        ? "bg-green-500 text-black"
+                        : "bg-white text-black hover:bg-cyan-400"
                   )}
                 >
                   {approvePending || isApproving ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      {approvePending ? "Approving..." : "Confirming..."}
+                      {approvePending ? "Approving" : "Confirming"}
                     </>
                   ) : approveSuccess ? (
                     <>
                       <CheckCircle2 className="w-4 h-4" />
-                      Approved!
+                      Approved
                     </>
                   ) : (
                     "Approve LBT"
@@ -304,43 +306,43 @@ export function BetSlip() {
                   onClick={handlePlaceBet}
                   disabled={!stake || !isConnected || isPending || isConfirming}
                   className={cn(
-                    "col-span-3 py-3 rounded-xl font-bold text-white shadow-lg active:translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2",
+                    "col-span-3 py-4 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2",
                     isPending || isConfirming
-                      ? "bg-gray-400"
+                      ? "bg-zinc-800 text-zinc-500"
                       : isSuccess
-                        ? "bg-green-500"
-                        : "bg-primary hover:bg-primary/90 shadow-primary/20"
+                        ? "bg-cyan-500 text-black"
+                        : "bg-white text-black hover:bg-cyan-400 shadow-xl shadow-cyan-500/10"
                   )}
                 >
                   {isPending && (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Pending...
+                      <Loader2 className="w-4 h-4 animate-spin text-cyan-500" />
+                      Processing
                     </>
                   )}
                   {isConfirming && (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Confirming...
+                      <Loader2 className="w-4 h-4 animate-spin text-cyan-500" />
+                      Confirming
                     </>
                   )}
                   {isSuccess && (
                     <>
                       <CheckCircle2 className="w-4 h-4" />
-                      Success!
+                      Placed!
                     </>
                   )}
-                  {!isPending && !isConfirming && !isSuccess && "Place Bet"}
+                  {!isPending && !isConfirming && !isSuccess && "Place Wager"}
                 </button>
               )}
             </div>
 
             {/* Transaction Status */}
             {(isPending || isConfirming || approvePending || isApproving) && (
-              <div className="text-xs text-center text-gray-500">
-                {(approvePending || isApproving) && "Approving token spending..."}
-                {isPending && "Waiting for wallet to confirm bet..."}
-                {isConfirming && "Transaction submitted. Waiting for confirmation..."}
+              <div className="text-[10px] font-bold text-center text-zinc-600 uppercase tracking-widest animate-pulse">
+                {(approvePending || isApproving) && "Sign Approval..."}
+                {isPending && "Awaiting Wallet..."}
+                {isConfirming && "Confirming on BSC..."}
               </div>
             )}
           </>

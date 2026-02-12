@@ -27,11 +27,11 @@ export function useUserPrediction(seasonId: bigint | undefined, address: `0x${st
 /**
  * Get predictor count for a team
  */
-export function useTeamPredictorCount(seasonId: bigint | undefined, teamId: number) {
+export function useTeamPredictionCount(seasonId: bigint | undefined, teamId: number) {
   return useReadContract({
     address: DEPLOYED_ADDRESSES.seasonPredictor,
     abi: SeasonPredictorABI,
-    functionName: 'getTeamPredictorCount',
+    functionName: 'getTeamPredictionCount',
     args: seasonId !== undefined ? [seasonId, BigInt(teamId)] : undefined,
     query: {
       enabled: seasonId !== undefined && teamId >= 0 && teamId < 20,
@@ -40,13 +40,13 @@ export function useTeamPredictorCount(seasonId: bigint | undefined, teamId: numb
 }
 
 /**
- * Get season prize pool
+ * Get season pool data
  */
-export function useSeasonPrizePool(seasonId: bigint | undefined) {
+export function useSeasonPool(seasonId: bigint | undefined) {
   return useReadContract({
     address: DEPLOYED_ADDRESSES.seasonPredictor,
     abi: SeasonPredictorABI,
-    functionName: 'getSeasonPrizePool',
+    functionName: 'getSeasonPool',
     args: seasonId !== undefined ? [seasonId] : undefined,
     query: {
       enabled: seasonId !== undefined,
@@ -62,22 +62,23 @@ export function useWinningTeam(seasonId: bigint | undefined) {
   return useReadContract({
     address: DEPLOYED_ADDRESSES.seasonPredictor,
     abi: SeasonPredictorABI,
-    functionName: 'getWinningTeam',
+    functionName: 'getSeasonPool',
     args: seasonId !== undefined ? [seasonId] : undefined,
     query: {
       enabled: seasonId !== undefined,
+      select: (data) => data ? (data as any)[1] : undefined,
     },
   });
 }
 
 /**
- * Check if user can claim prize and amount
+ * Check if user is a winner and their reward
  */
-export function useCanClaimPrize(seasonId: bigint | undefined, address: `0x${string}` | undefined) {
+export function useCheckWinner(seasonId: bigint | undefined, address: `0x${string}` | undefined) {
   return useReadContract({
     address: DEPLOYED_ADDRESSES.seasonPredictor,
     abi: SeasonPredictorABI,
-    functionName: 'canClaimPrize',
+    functionName: 'checkWinner',
     args: seasonId !== undefined && address ? [seasonId, address] : undefined,
     query: {
       enabled: seasonId !== undefined && !!address,
@@ -92,26 +93,11 @@ export function useSeasonStats(seasonId: bigint | undefined) {
   return useReadContract({
     address: DEPLOYED_ADDRESSES.seasonPredictor,
     abi: SeasonPredictorABI,
-    functionName: 'getSeasonStats',
+    functionName: 'getSeasonPool',
     args: seasonId !== undefined ? [seasonId] : undefined,
     query: {
       enabled: seasonId !== undefined,
       refetchInterval: 10000,
-    },
-  });
-}
-
-/**
- * Get prediction distribution (all teams)
- */
-export function usePredictionDistribution(seasonId: bigint | undefined) {
-  return useReadContract({
-    address: DEPLOYED_ADDRESSES.seasonPredictor,
-    abi: SeasonPredictorABI,
-    functionName: 'getPredictionDistribution',
-    args: seasonId !== undefined ? [seasonId] : undefined,
-    query: {
-      enabled: seasonId !== undefined,
     },
   });
 }
@@ -123,10 +109,11 @@ export function useHasClaimed(seasonId: bigint | undefined, address: `0x${string
   return useReadContract({
     address: DEPLOYED_ADDRESSES.seasonPredictor,
     abi: SeasonPredictorABI,
-    functionName: 'hasClaimed',
+    functionName: 'getUserPrediction',
     args: seasonId !== undefined && address ? [seasonId, address] : undefined,
     query: {
       enabled: seasonId !== undefined && !!address,
+      select: (data) => data ? (data as any).claimed : false,
     },
   });
 }
@@ -140,12 +127,12 @@ export function useMakePrediction() {
   const { writeContract, data: hash, ...rest } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
-  const makePrediction = (teamId: number) => {
+  const makePrediction = (seasonId: bigint, teamId: number) => {
     writeContract({
       address: DEPLOYED_ADDRESSES.seasonPredictor,
       abi: SeasonPredictorABI,
       functionName: 'makePrediction',
-      args: [BigInt(teamId)],
+      args: [seasonId, BigInt(teamId)],
     });
   };
 
@@ -159,23 +146,23 @@ export function useMakePrediction() {
 }
 
 /**
- * Claim prize for correct prediction
+ * Claim reward for correct prediction
  */
-export function useClaimPrize() {
+export function useClaimReward() {
   const { writeContract, data: hash, ...rest } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
-  const claimPrize = (seasonId: bigint) => {
+  const claimReward = (seasonId: bigint) => {
     writeContract({
       address: DEPLOYED_ADDRESSES.seasonPredictor,
       abi: SeasonPredictorABI,
-      functionName: 'claimPrize',
+      functionName: 'claimReward',
       args: [seasonId],
     });
   };
 
   return {
-    claimPrize,
+    claimReward,
     hash,
     isConfirming,
     isSuccess,
@@ -189,17 +176,17 @@ export function useClaimPrize() {
  * Get complete season prediction data for user
  */
 export function useUserSeasonData(seasonId: bigint | undefined, address: `0x${string}` | undefined) {
-  const { data: prediction, isLoading: l1 } = useUserPrediction(seasonId, address);
-  const { data: canClaim, isLoading: l2 } = useCanClaimPrize(seasonId, address);
-  const { data: hasClaimed, isLoading: l3 } = useHasClaimed(seasonId, address);
-  const { data: stats, isLoading: l4 } = useSeasonStats(seasonId);
+  const { data: predictionData, isLoading: l1 } = useUserPrediction(seasonId, address);
+  const { data: winData, isLoading: l2 } = useCheckWinner(seasonId, address);
+  const { data: poolData, isLoading: l3 } = useSeasonPool(seasonId);
 
   return {
-    prediction: prediction as bigint | undefined,
-    canClaim: canClaim ? (canClaim as [boolean, bigint])[0] : false,
-    prizeAmount: canClaim ? (canClaim as [boolean, bigint])[1] : 0n,
-    hasClaimed: hasClaimed as boolean | undefined,
-    stats: stats as [bigint, bigint, boolean, bigint, bigint] | undefined,
-    isLoading: l1 || l2 || l3 || l4,
+    prediction: predictionData ? (predictionData as any).teamId : undefined,
+    timestamp: predictionData ? (predictionData as any).timestamp : undefined,
+    hasClaimed: predictionData ? (predictionData as any).claimed : false,
+    isWinner: winData ? (winData as [boolean, bigint])[0] : false,
+    rewardAmount: winData ? (winData as [boolean, bigint])[1] : 0n,
+    poolStats: poolData as [bigint, bigint, bigint, bigint, boolean] | undefined,
+    isLoading: l1 || l2 || l3,
   };
 }
