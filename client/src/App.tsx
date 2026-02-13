@@ -1,11 +1,9 @@
 import { Switch, Route } from "wouter";
-import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider } from 'wagmi';
-import { PrivyProvider } from '@privy-io/react-auth';
-import { config } from "./lib/wagmi";
+import { config } from "./lib/web3modal";
 import { Toaster } from "@/components/ui/toaster";
 import { BetSlipProvider } from "@/context/BetSlipContext";
-import { bscTestnet } from 'wagmi/chains';
 
 import Home from "@/pages/Home";
 import Dashboard from "@/pages/Dashboard";
@@ -17,9 +15,21 @@ import RoundResults from "@/pages/RoundResults";
 import NotFound from "@/pages/not-found";
 import { MainLayout } from "@/components/layout/MainLayout";
 
-// Create a client
-const queryClient = new QueryClient();
+import { useWeb3Modal , createWeb3Modal} from "@web3modal/wagmi/react";
 
+// Create query client
+const queryClient = new QueryClient();
+// Initialize Web3Modal before React renders
+createWeb3Modal({
+  wagmiConfig: config,
+  projectId: import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || '',
+  enableAnalytics: false,
+  themeMode: 'dark',
+  themeVariables: {
+    '--w3m-color-mix': '#06b6d4',
+    '--w3m-accent': '#06b6d4',
+  }
+});
 function Router() {
   return (
     <Switch>
@@ -66,31 +76,14 @@ function Router() {
 
 function App() {
   return (
-    <PrivyProvider
-      appId={import.meta.env.VITE_PRIVY_APP_ID || 'clzk8aaaa00kql50fd6wqaaaa'}
-      config={{
-        loginMethods: ['email', 'google', 'twitter', 'discord', 'wallet'],
-        appearance: {
-          theme: 'dark',
-          accentColor: '#06b6d4', // cyan-500
-          logo: 'https://phantasma.bet/logo.png',
-        },
-        embeddedWallets: {
-          createOnLogin: 'users-without-wallets',
-        },
-        defaultChain: bscTestnet,
-        supportedChains: [bscTestnet],
-      }}
-    >
-      <WagmiProvider config={config}>
-        <QueryClientProvider client={queryClient}>
-          <BetSlipProvider>
-            <Toaster />
-            <Router />
-          </BetSlipProvider>
-        </QueryClientProvider>
-      </WagmiProvider>
-    </PrivyProvider>
+    <WagmiProvider config={config}>
+      <QueryClientProvider client={queryClient}>
+        <BetSlipProvider>
+          <Toaster />
+          <Router />
+        </BetSlipProvider>
+      </QueryClientProvider>
+    </WagmiProvider>
   );
 }
 

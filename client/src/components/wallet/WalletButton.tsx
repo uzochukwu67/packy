@@ -1,7 +1,7 @@
-import { usePrivy, useWallets } from '@privy-io/react-auth';
+import { useAccount, useDisconnect } from 'wagmi';
+import { useWeb3Modal } from '@web3modal/wagmi/react';
 import { Wallet, LogOut, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useEffect } from 'react';
 
 interface WalletButtonProps {
   variant?: 'default' | 'compact';
@@ -9,21 +9,11 @@ interface WalletButtonProps {
 }
 
 export function WalletButton({ variant = 'default', className }: WalletButtonProps) {
-  const { ready, authenticated, login, logout, user } = usePrivy();
-  const { wallets } = useWallets();
+  const { address, isConnected, isConnecting } = useAccount();
+  const { disconnect } = useDisconnect();
+  const { open } = useWeb3Modal();
 
-  // Get the active wallet address
-  const wallet = wallets[0];
-  const address = wallet?.address;
-
-  // Auto-set active wallet when user logs in
-  useEffect(() => {
-    if (authenticated && wallet && !wallet.connectorType) {
-      // Embedded wallet - already active
-    }
-  }, [authenticated, wallet]);
-
-  if (!ready) {
+  if (isConnecting) {
     return (
       <button
         disabled
@@ -33,19 +23,19 @@ export function WalletButton({ variant = 'default', className }: WalletButtonPro
         )}
       >
         <Loader2 className="w-4 h-4 animate-spin" />
-        Loading...
+        Connecting...
       </button>
     );
   }
 
-  if (authenticated && address) {
+  if (isConnected && address) {
     return (
       <div className="space-y-2">
         {variant === 'default' && (
           <div className="bg-zinc-900 rounded-xl p-3 border border-white/10">
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">
-                {user?.email?.address || user?.google?.email || user?.twitter?.username || 'Wallet'}
+                Connected
               </span>
               <Wallet className="w-4 h-4 text-cyan-500" />
             </div>
@@ -56,7 +46,7 @@ export function WalletButton({ variant = 'default', className }: WalletButtonPro
         )}
 
         <button
-          onClick={logout}
+          onClick={() => disconnect()}
           className={cn(
             "w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-zinc-900 border border-white/10 hover:border-red-500/50 text-xs font-bold uppercase tracking-widest text-zinc-300 hover:text-red-400 transition-colors",
             className
@@ -71,7 +61,7 @@ export function WalletButton({ variant = 'default', className }: WalletButtonPro
 
   return (
     <button
-      onClick={login}
+      onClick={() => open()}
       className={cn(
         "w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-white text-black hover:bg-cyan-400 text-xs font-bold uppercase tracking-widest transition-colors",
         className

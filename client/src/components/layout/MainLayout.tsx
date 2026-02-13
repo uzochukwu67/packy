@@ -7,7 +7,7 @@ import { useLocation, Link } from "wouter";
 import { cn } from "@/lib/utils";
 import { LayoutDashboard, Coins, History, Trophy } from "lucide-react";
 import { WalletButton } from "@/components/wallet/WalletButton";
-import { usePrivy, useWallets } from "@privy-io/react-auth";
+import { useAccount } from "wagmi";
 import { useLeagueBalance } from "@/hooks/contracts/useLeagueToken";
 import { useFaucet } from "@/hooks/useFaucet";
 import { useUserPoints } from "@/hooks/usePoints";
@@ -17,9 +17,7 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const [showSuccess, setShowSuccess] = useState(false);
 
-  const { authenticated } = usePrivy();
-  const { wallets } = useWallets();
-  const address = wallets[0]?.address as `0x${string}` | undefined;
+  const { address, isConnected } = useAccount();
 
   const { balanceFloat, refetch } = useLeagueBalance(address);
   const { requestTokens, isLoading, error } = useFaucet();
@@ -88,7 +86,7 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
             {/* Mobile Wallet Section */}
             <div className="p-6 border-t border-white/5 space-y-3">
               {/* Points Display */}
-              {authenticated && address && userPoints && (
+              {isConnected && address && userPoints && (
                 <div className="bg-zinc-900 rounded-xl p-4 border border-white/10">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">Testnet Points</span>
@@ -105,7 +103,7 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
               )}
 
               {/* LBT Balance Display */}
-              {authenticated && address && (
+              {isConnected && address && (
                 <div className="bg-zinc-900 rounded-xl p-4 border border-white/10">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">Balance</span>
@@ -119,7 +117,7 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
               )}
 
               {/* Faucet Button */}
-              {authenticated && address && (
+              {isConnected && address && (
                 <button
                   onClick={handleFaucetClick}
                   disabled={isLoading || showSuccess}

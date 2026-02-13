@@ -367,8 +367,9 @@ let monitoringInterval: NodeJS.Timeout | null = null;
 let isInitializing = false; // Flag to prevent monitoring loop from running during setup
 let lastSettledRoundId: bigint | null = null;
 let roundSettledAt: number | null = null;
+let wasRoundSettled = false; // Track previous settlement state to detect transitions
 
-const NEXT_ROUND_DELAY_MS = 100 * 60 * 10; // 10 minutes
+const NEXT_ROUND_DELAY_MS = 20 * 60 * 1000; // 20 minutes (1,200,000 ms)
 
 export function startMonitoring() {
   if (monitoringInterval) {
@@ -506,9 +507,19 @@ export function startMonitoring() {
         // Record when this round was settled
         lastSettledRoundId = state.currentRoundId;
         roundSettledAt = Date.now();
+        wasRoundSettled = true;
       }
 
-      // Auto-start next round 10 minutes after previous round settled
+      // Detect round settlement (even if settled automatically by smart contract)
+      if (state.roundSettled && !wasRoundSettled && state.currentRoundId > BigInt(0)) {
+        // Round just became settled (state transition detected)
+        log(`Round ${state.currentRoundId} detected as settled (auto-settled by smart contract)`, 'warn');
+        lastSettledRoundId = state.currentRoundId;
+        roundSettledAt = Date.now();
+        wasRoundSettled = true;
+      }
+
+      // Auto-start next round 20 minutes after previous round settled
       if (
         state.roundSettled &&
         lastSettledRoundId === state.currentRoundId &&
@@ -518,7 +529,7 @@ export function startMonitoring() {
 
         if (timeSinceSettlement >= NEXT_ROUND_DELAY_MS) {
           // Start next round automatically
-          log(`10 minutes elapsed since round ${state.currentRoundId} settled. Starting next round...`, 'warn');
+          log(`20 minutes elapsed since round ${state.currentRoundId} settled. Starting next round...`, 'warn');
 
           const result = await startRound();
 
@@ -526,6 +537,7 @@ export function startMonitoring() {
             // Reset settlement tracking
             lastSettledRoundId = null;
             roundSettledAt = null;
+            wasRoundSettled = false; // Reset for next round
             log('✅ Next round started automatically');
 
             // Seed the new round pools
