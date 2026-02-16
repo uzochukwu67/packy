@@ -203,13 +203,15 @@ contract BettingCore is Ownable, ReentrancyGuard, Pausable {
             require(odds.locked, "Odds not locked");
 
             // Get the odds for the predicted outcome
+            // ⚠️ CRITICAL FIX: Odds are stored as uint64 with 6 decimals (1e6)
+            // Must scale to 18 decimals (1e18) for calculations
             uint256 matchOdds;
             if (prediction == 1) {
-                matchOdds = odds.homeOdds;
+                matchOdds = uint256(odds.homeOdds) * 1e12; // Scale 1e6 → 1e18
             } else if (prediction == 2) {
-                matchOdds = odds.awayOdds;
+                matchOdds = uint256(odds.awayOdds) * 1e12; // Scale 1e6 → 1e18
             } else {
-                matchOdds = odds.drawOdds;
+                matchOdds = uint256(odds.drawOdds) * 1e12; // Scale 1e6 → 1e18
             }
 
             // Multiply odds together: oddsMultiplier = oddsMultiplier * matchOdds / PRECISION
@@ -616,6 +618,12 @@ contract BettingCore is Ownable, ReentrancyGuard, Pausable {
         // Lock odds immediately after seeding
         _lockRoundOdds(roundId);
 
+        // Callback to GameCore to mark round as seeded
+        (bool success,) = s.gameEngine.call(
+            abi.encodeWithSignature("markRoundSeeded(uint256)", roundId)
+        );
+        require(success, "Failed to mark round seeded in GameCore");
+
         emit RoundSeeded(roundId);
     }
 
@@ -629,7 +637,7 @@ contract BettingCore is Ownable, ReentrancyGuard, Pausable {
      */
     function settleRound(
         uint256 roundId,
-        uint8[] calldata results
+        uint8[10] calldata results
     ) external onlyOwnerOrGameEngine {
         // H-04 FIX: Validate roundId is valid (non-zero)
         require(roundId > 0, "Invalid round ID");
@@ -639,11 +647,18 @@ contract BettingCore is Ownable, ReentrancyGuard, Pausable {
 
         require(meta.seeded, "Round not seeded");
         require(!meta.settled, "Already settled");
-        require(results.length == Constants.MAX_MATCHES_PER_ROUND, "Invalid results length");
 
-        // Store match results
-        for (uint256 i = 0; i < results.length;) {
-            require(results[i] >= 1 && results[i] <= 3, "Invalid result");
+        // SECURITY FIX: Verify that GameCore has actually settled this round
+        // This prevents manual settlement with fake results before VRF is fulfilled
+        (bool success, bytes memory data) = s.gameEngine.staticcall(
+            abi.encodeWithSignature("isRoundSettled(uint256)", roundId)
+        );
+        require(success && data.length > 0, "Failed to verify round settlement");
+        bool isGameCoreSettled = abi.decode(data, (bool));
+        require(isGameCoreSettled, "GameCore round not settled yet");
+
+        // Store match results (already validated by GameCore VRF)
+        for (uint256 i = 0; i < 10;) {
             s.matchResults[roundId][i] = results[i];
             unchecked {
                 ++i;

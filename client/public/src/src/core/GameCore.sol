@@ -27,19 +27,22 @@ contract GameCore is VRFConsumerBaseV2Plus {
     uint256 public s_subscriptionId;
 
     /// @notice VRF key hash (gas lane)
-    bytes32 public keyHash = 0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae;
+    bytes32 public keyHash;
 
     /// @notice VRF callback gas limit
-    uint32 public callbackGasLimit = 2_000_000;
+    uint32 public callbackGasLimit;
 
     /// @notice VRF request confirmations
-    uint16 public requestConfirmations = 3;
+    uint16 public requestConfirmations;
 
     /// @notice Number of random words (1 per match)
-    uint32 public numWords = 10;
+    uint32 public numWords;
 
     /// @notice VRF timeout for emergency settlement
     uint256 public constant VRF_TIMEOUT = 2 hours;
+
+    /// @notice VRF re-request cooldown (time before allowing another request)
+    uint256 public constant VRF_REREQUEST_COOLDOWN = 15 minutes;
 
     // ============ Game Constants ============
 
@@ -141,6 +144,12 @@ contract GameCore is VRFConsumerBaseV2Plus {
     /// @notice Betting core contract for auto-seeding
     address public bettingCore;
 
+    /// @notice Track if round has been seeded by BettingCore
+    mapping(uint256 => bool) public roundSeededByBetting;
+
+    /// @notice Cached results in uint8 format for easy access
+    mapping(uint256 => uint8[10]) public roundResults;
+
     // ============ Events ============
 
     event SeasonStarted(uint256 indexed seasonId, uint256 startTime);
@@ -158,6 +167,7 @@ contract GameCore is VRFConsumerBaseV2Plus {
         MatchOutcome outcome
     );
     event VRFRequested(uint256 indexed roundId, uint256 requestId);
+    event VRFReRequested(uint256 indexed roundId, uint256 oldRequestId, uint256 newRequestId);
     event VRFFulfilled(uint256 indexed requestId, uint256 indexed roundId);
     event EmergencySettlement(uint256 indexed roundId);
 
@@ -196,14 +206,26 @@ contract GameCore is VRFConsumerBaseV2Plus {
      * @param _linkAddress LINK token address
      * @param _vrfCoordinator VRF Coordinator address
      * @param _subscriptionId VRF subscription ID
+     * @param _keyHash VRF key hash (gas lane)
+     * @param _callbackGasLimit VRF callback gas limit
+     * @param _requestConfirmations VRF request confirmations
+     * @param _numWords Number of random words per request
      */
     constructor(
         address _linkAddress,
         address _vrfCoordinator,
-        uint256 _subscriptionId
+        uint256 _subscriptionId,
+        bytes32 _keyHash,
+        uint32 _callbackGasLimit,
+        uint16 _requestConfirmations,
+        uint32 _numWords
     ) VRFConsumerBaseV2Plus(_vrfCoordinator) {
         linkToken = LinkTokenInterface(_linkAddress);
         s_subscriptionId = _subscriptionId;
+        keyHash = _keyHash;
+        callbackGasLimit = _callbackGasLimit;
+        requestConfirmations = _requestConfirmations;
+        numWords = _numWords;
         _initializeTeams();
     }
 
@@ -307,6 +329,7 @@ contract GameCore is VRFConsumerBaseV2Plus {
      * @notice Request VRF randomness for match results
      * @param enableNativePayment Use native ETH instead of LINK
      * @return requestId VRF request ID
+     * @dev Can be called multiple times if previous request hasn't been fulfilled after cooldown period
      */
     function requestMatchResults(bool enableNativePayment) external onlyOwner returns (uint256 requestId) {
         uint256 roundId = currentSeason.currentRound;
@@ -314,6 +337,21 @@ contract GameCore is VRFConsumerBaseV2Plus {
 
         if (round.settled) revert RoundAlreadySettled();
         if (block.timestamp < round.endTime) revert RoundDurationNotElapsed();
+
+        // Allow re-requesting if previous request hasn't been fulfilled and cooldown has passed
+        if (round.resultsRequested) {
+            uint256 previousRequestId = round.vrfRequestId;
+            VRFRequest storage previousRequest = vrfRequests[previousRequestId];
+
+            // If previous request was fulfilled, can't request again (round should be settled)
+            require(!previousRequest.fulfilled, "VRF already fulfilled");
+
+            // Must wait cooldown period before re-requesting
+            require(
+                block.timestamp >= roundVRFRequestTime[roundId] + VRF_REREQUEST_COOLDOWN,
+                "VRF cooldown not elapsed"
+            );
+        }
 
         // Request random words
         requestId = s_vrfCoordinator.requestRandomWords(
@@ -329,18 +367,26 @@ contract GameCore is VRFConsumerBaseV2Plus {
             })
         );
 
-        // Store request
+        // Store new request
         vrfRequests[requestId] = VRFRequest({
             exists: true,
             fulfilled: false,
             roundId: roundId
         });
 
+        // Check if this is a re-request
+        bool isReRequest = round.resultsRequested;
+        uint256 oldRequestId = round.vrfRequestId;
+
         round.vrfRequestId = requestId;
         round.resultsRequested = true;
         roundVRFRequestTime[roundId] = block.timestamp;
 
-        emit VRFRequested(roundId, requestId);
+        if (isReRequest) {
+            emit VRFReRequested(roundId, oldRequestId, requestId);
+        } else {
+            emit VRFRequested(roundId, requestId);
+        }
     }
 
     /**
@@ -363,9 +409,11 @@ contract GameCore is VRFConsumerBaseV2Plus {
 
         request.fulfilled = true;
 
-        // Settle each match
+        // Settle each match and store results
         for (uint256 i = 0; i < MATCHES_PER_ROUND; i++) {
             _settleMatch(roundId, i, randomWords[i]);
+            // Store result as uint8 (1=HOME_WIN, 2=AWAY_WIN, 3=DRAW)
+            roundResults[roundId][i] = uint8(matches[roundId][i].outcome);
         }
 
         round.settled = true;
@@ -374,13 +422,9 @@ contract GameCore is VRFConsumerBaseV2Plus {
         emit RoundSettled(currentSeason.seasonId, roundId);
 
         // Auto-settle in BettingCore if configured
+        // CRITICAL: No try-catch - let it revert if settlement fails
         if (bettingCore != address(0)) {
-            uint8[10] memory results = _getResults(roundId);
-            uint8[] memory resultsArray = new uint8[](10);
-            for (uint256 i = 0; i < 10; i++) {
-                resultsArray[i] = results[i];
-            }
-            try IBettingCore(bettingCore).settleRound(roundId, resultsArray) {} catch {}
+            IBettingCore(bettingCore).settleRound(roundId, roundResults[roundId]);
         }
 
         // Check season completion
@@ -421,15 +465,12 @@ contract GameCore is VRFConsumerBaseV2Plus {
         emit RoundSettled(currentSeason.seasonId, roundId);
 
         // Auto-settle in BettingCore if configured
+        // CRITICAL: No try-catch - let it revert if settlement fails
         if (bettingCore != address(0)) {
-            uint8[10] memory results = _getResults(roundId);
-            uint8[] memory resultsArray = new uint8[](10);
-            for (uint256 i = 0; i < 10; i++) {
-                resultsArray[i] = results[i];
-            }
-            try IBettingCore(bettingCore).settleRound(roundId, resultsArray) {} catch {}
+            IBettingCore(bettingCore).settleRound(roundId, roundResults[roundId]);
         }
 
+        // Check season completion
         if (currentSeason.currentRound >= ROUNDS_PER_SEASON) {
             _endSeason(currentSeason.seasonId);
         }
@@ -483,6 +524,80 @@ contract GameCore is VRFConsumerBaseV2Plus {
      */
     function isRoundSettled(uint256 roundId) external view returns (bool) {
         return rounds[roundId].settled;
+    }
+
+    /**
+     * @notice Get VRF request status for a round
+     * @param roundId Round ID to check
+     * @return requested Whether VRF was requested
+     * @return fulfilled Whether VRF was fulfilled
+     * @return canReRequest Whether VRF can be re-requested (cooldown elapsed)
+     * @return requestTime Timestamp of last VRF request
+     */
+    function getVRFStatus(uint256 roundId) external view returns (
+        bool requested,
+        bool fulfilled,
+        bool canReRequest,
+        uint256 requestTime
+    ) {
+        Round storage round = rounds[roundId];
+        requested = round.resultsRequested;
+        requestTime = roundVRFRequestTime[roundId];
+
+        if (requested && round.vrfRequestId != 0) {
+            VRFRequest storage request = vrfRequests[round.vrfRequestId];
+            fulfilled = request.fulfilled;
+
+            // Can re-request if not fulfilled and cooldown has passed
+            canReRequest = !fulfilled &&
+                           !round.settled &&
+                           block.timestamp >= requestTime + VRF_REREQUEST_COOLDOWN;
+        }
+    }
+
+    /**
+     * @notice Mark round as seeded by BettingCore (callback)
+     * @param roundId Round ID that was seeded
+     */
+    function markRoundSeeded(uint256 roundId) external {
+        require(msg.sender == bettingCore, "Only BettingCore");
+        require(rounds[roundId].startTime > 0, "Round not started");
+        require(!roundSeededByBetting[roundId], "Already seeded");
+
+        roundSeededByBetting[roundId] = true;
+    }
+
+    /**
+     * @notice Get match results for a settled round (cached uint8 array)
+     * @param roundId Round ID to query
+     * @return results Array of match outcomes (1=HOME_WIN, 2=AWAY_WIN, 3=DRAW)
+     */
+    function getMatchResults(uint256 roundId) external view returns (uint8[10] memory) {
+        require(rounds[roundId].settled, "Round not settled");
+        return roundResults[roundId];
+    }
+
+    /**
+     * @notice Get betting window end time for a round
+     * @param roundId Round ID to query
+     * @return Timestamp when betting closes (30 minutes before round end)
+     */
+    function getBettingWindowEnd(uint256 roundId) external view returns (uint256) {
+        Round storage round = rounds[roundId];
+        require(round.startTime > 0, "Round not started");
+        return round.endTime - 30 minutes;
+    }
+
+    /**
+     * @notice Check if betting is allowed for a round
+     * @param roundId Round ID to check
+     * @return True if round is seeded, not settled, and within betting window
+     */
+    function isBettingAllowed(uint256 roundId) external view returns (bool) {
+        Round storage round = rounds[roundId];
+        return roundSeededByBetting[roundId] &&
+               !round.settled &&
+               block.timestamp <= (round.endTime - 30 minutes);
     }
 
     /**
@@ -737,5 +852,5 @@ contract GameCore is VRFConsumerBaseV2Plus {
  */
 interface IBettingCore {
     function seedRound(uint256 roundId) external;
-    function settleRound(uint256 roundId, uint8[] calldata results) external;
+    function settleRound(uint256 roundId, uint8[10] calldata results) external;
 }

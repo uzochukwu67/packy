@@ -577,11 +577,16 @@ export async function startEventListeners() {
   let lastProcessedBlock: bigint;
 
   try {
-    lastProcessedBlock = await publicClient.getBlockNumber();
+    const currentBlock = await publicClient.getBlockNumber();
+    // Start from 1000 blocks ago to catch recent events while avoiding pruned data
+    lastProcessedBlock = currentBlock > BigInt(1000) ? currentBlock - BigInt(1000) : currentBlock;
     log(`Starting event sync from block ${lastProcessedBlock}`);
   } catch (error: any) {
     log(`Failed to get initial block number: ${error.message}`, 'error');
-    lastProcessedBlock = BigInt(0); // Fallback
+    // Safe fallback: Use a recent-ish block number that won't be pruned
+    // BSC Testnet keeps ~2000-5000 blocks, so this is conservative
+    lastProcessedBlock = BigInt(90000000); // Update this after deployment
+    log(`Using fallback block ${lastProcessedBlock}`, 'warn');
   }
 
   const pollInterval = 10000; // 10 seconds

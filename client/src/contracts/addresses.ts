@@ -11,18 +11,26 @@
  * - Odds compression [1.25x - 2.05x] for better UX
  * - Round duration: 3 hours
  */
+// # Deployed Contract Addresses (Updated: 2026-02-13 - VRF Config Update)
+// LBT_TOKEN="0x3007063d51518e66C9e4Ff2Dc9cBcd4d8117E66c"
+// GAME_CORE="0xa5bE0faf9f7C59f60e40f9192E721DA6cB716F5f"
+// BETTING_CORE="0xc6C9f26b9FEF101A182B83458A7C87b689bE7d07"
+// SEASON_PREDICTOR="0x100ffE2c1c17A8DbA94452Dd9e92256eb8A5c45F"
+// BETTING_ROUTER="0x4a3842c82BcA361f4C6c69aa922407024253336d"
+// SWAP_ROUTER="0x11237D3668c80a9AaC3392d6a0269004968393A1"
+// TOKEN_REGISTRY="0x958a4d5a424104cC7d384d84bF71F46C6fAA6a27"
 
 export const DEPLOYED_ADDRESSES = {
   // Core Protocol Contracts
-  leagueBetToken: '0xdf388312ac12e0d4dbB25d24fD3B2806e14423e2' as const,
-  gameCore: '0x02fD62cCBb2DF02583db6cAddF00c0bAEa8C7204' as const,
-  bettingCore: '0x86A391449E0259Cd5DbFcEbbbac839573Ced5Cfd' as const,
+  leagueBetToken: '0x3007063d51518e66C9e4Ff2Dc9cBcd4d8117E66c' as const,
+  gameCore: '0xa5bE0faf9f7C59f60e40f9192E721DA6cB716F5f' as const,
+  bettingCore: '0xc6C9f26b9FEF101A182B83458A7C87b689bE7d07' as const,
 
   // Periphery Contracts
-  bettingRouter: '0xa0B5CCed676202888192345E38b8CeE5B219B1e9' as const,
-  seasonPredictor: '0xda8cF81bEe9D65Dc17661421605b16a1De65671C' as const,
-  swapRouter: '0xE4c3C52eA813158E01318961230f1a37F130f862' as const,
-  tokenRegistry: '0x5f2c8a6a7D30def120Fe7802a7d816750EB99429' as const,
+  bettingRouter: '0x4a3842c82BcA361f4C6c69aa922407024253336d' as const,
+  seasonPredictor: '0x100ffE2c1c17A8DbA94452Dd9e92256eb8A5c45F' as const,
+  swapRouter: '0x11237D3668c80a9AaC3392d6a0269004968393A1' as const,
+  tokenRegistry: '0x958a4d5a424104cC7d384d84bF71F46C6fAA6a27' as const,
 
   // Protocol Treasury
   treasury: '0x05f463129c9ce4Efb331c45b2F1A6a8E095c790D' as const,
@@ -30,12 +38,3 @@ export const DEPLOYED_ADDRESSES = {
 
 export type ContractAddresses = typeof DEPLOYED_ADDRESSES;
 
-// === DEPLOYMENT SUMMARY (V3.0 - PROTOCOL-BACKED MODEL) ===
-//   LBT Token:         0xdf388312ac12e0d4dbB25d24fD3B2806e14423e2
-//   GameCore:          0x02fD62cCBb2DF02583db6cAddF00c0bAEa8C7204
-//   BettingCore:       0x86A391449E0259Cd5DbFcEbbbac839573Ced5Cfd
-//   BettingRouter:     0xa0B5CCed676202888192345E38b8CeE5B219B1e9
-//   SeasonPredictor:   0xda8cF81bEe9D65Dc17661421605b16a1De65671C
-//   SwapRouter:        0xE4c3C52eA813158E01318961230f1a37F130f862
-//   TokenRegistry:     0x5f2c8a6a7D30def120Fe7802a7d816750EB99429
-//   Protocol Treasury: 0x05f463129c9ce4Efb331c45b2F1A6a8E095c790D

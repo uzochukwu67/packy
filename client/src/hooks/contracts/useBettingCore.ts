@@ -447,13 +447,15 @@ export function useCompleteBetInfo(betId: bigint | undefined) {
   const { data: betData, isLoading: betLoading } = useBet(betId);
   const { data: claimStatus, isLoading: claimLoading } = useBetClaimStatus(betId);
   const { data: bountyInfo, isLoading: bountyLoading } = useCanClaimWithBounty(betId);
+  const { data: roundMetadata, isLoading: roundLoading } = useRoundMetadata(betData?.bet?.roundId);
 
   return {
     bet: betData?.bet,
     predictions: betData?.predictions,
     claimStatus,
     bountyInfo,
-    isLoading: betLoading || claimLoading || bountyLoading,
+    roundMetadata,
+    isLoading: betLoading || claimLoading || bountyLoading || roundLoading,
   };
 }
 
