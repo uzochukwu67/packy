@@ -25,7 +25,6 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
 
   const navItems = [
     { label: "Betting Dashboard", icon: LayoutDashboard, href: "/dashboard" },
-    { label: "Liquidity Pool", icon: Coins, href: "/liquidity" },
     { label: "My Bets", icon: History, href: "/my-bets" },
     { label: "Season Predictor", icon: Trophy, href: "/season" },
     { label: "Leaderboard", icon: Award, href: "/leaderboard" },

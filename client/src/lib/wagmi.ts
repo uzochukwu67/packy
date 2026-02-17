@@ -15,13 +15,12 @@ export const config = createConfig({
       batch: {
         wait: 50,
       },
-      retryCount: 3,
+      retryCount: 1,
       timeout: 10_000,
     }),
   },
   connectors: [
-    injected(),
-    walletConnect({
+     walletConnect({
       projectId: import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || 'dummy-project-id',
       metadata: {
         name: 'Phantasma',
@@ -31,6 +30,7 @@ export const config = createConfig({
       },
       showQrModal: true,
     }),
+    injected(),
     coinbaseWallet({
       appName: 'Phantasma',
       appLogoUrl: 'https://phantasma.bet/icon.png',

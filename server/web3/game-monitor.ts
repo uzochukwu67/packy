@@ -64,7 +64,9 @@ export async function getGameState(): Promise<GameState> {
 
       // Check if round is settled from database (fallback)
       const dbRound = await storage.getRoundById(currentRoundId.toString());
-      roundSettled = blockchainSettled || (dbRound?.settled ?? false);
+      // BLOCKCHAIN IS SOURCE OF TRUTH: If blockchain has valid data (endTime > 0), trust it.
+      // Only fall back to DB if blockchain data is unavailable.
+      roundSettled = blockchainEndTime > 0 ? blockchainSettled : (dbRound?.settled ?? false);
 
       if (!roundSettled) {
         // Calculate time until round end using blockchain endTime
@@ -72,8 +74,8 @@ export async function getGameState(): Promise<GameState> {
         timeUntilRoundEnd = Math.max(0, (blockchainEndTime - now) * 1000);
 
         // Should request VRF if round duration has elapsed and no VRF request yet
-        // A round is considered "requested" if resultsRequested is true OR vrfRequestId is set
-        const hasVrfRequest = (blockchainVrfRequestId > BigInt(0)) || blockchainResultsRequested || !!dbRound?.vrfRequestId;
+        // BLOCKCHAIN ONLY - DB data can be stale from previous runs
+        const hasVrfRequest = (blockchainVrfRequestId > BigInt(0)) || blockchainResultsRequested;
 
         // Critical: Only request VRF if endTime is in the past and not zero
         shouldRequestVRF = blockchainEndTime > 0 && now >= blockchainEndTime && !hasVrfRequest;
@@ -82,13 +84,9 @@ export async function getGameState(): Promise<GameState> {
           log(`[DEBUG] triggering shouldRequestVRF: now=${now}, endTime=${blockchainEndTime}, hasVrfRequest=${hasVrfRequest}`);
         }
 
-        // Should settle round if VRF fulfilled but not settled yet
-        if (hasVrfRequest && !roundSettled) {
-          // Check fulfillment on blockchain if needed, or rely on dbRound if sync is fast
-          if (dbRound?.vrfFulfilledAt || blockchainSettled) {
-            shouldSettleRound = true;
-          }
-        }
+        // NOTE: shouldSettleRound is intentionally NOT set here.
+        // The new GameCore contract auto-settles BettingCore via callback when VRF fulfills.
+        // The backend only needs to REQUEST VRF - the contract handles the rest.
       }
 
       // Calculate time until next round starts (if current round is settled)
@@ -499,21 +497,14 @@ export function startMonitoring() {
         await requestMatchResults();
       }
 
-      // Auto-settle round if VRF fulfilled
-      if (state.shouldSettleRound && state.currentRoundId > BigInt(0)) {
-        log('VRF fulfilled. Auto-settling round...', 'warn');
-        await settleRound(state.currentRoundId);
+      // NOTE: No manual settleRound call here.
+      // The new GameCore contract auto-settles BettingCore via VRF callback.
+      // Backend only needs to detect settlement for the 20-minute timer.
 
-        // Record when this round was settled
-        lastSettledRoundId = state.currentRoundId;
-        roundSettledAt = Date.now();
-        wasRoundSettled = true;
-      }
-
-      // Detect round settlement (even if settled automatically by smart contract)
+      // Detect round settlement via blockchain state transition
+      // state.roundSettled is now blockchain-authoritative, so this is safe
       if (state.roundSettled && !wasRoundSettled && state.currentRoundId > BigInt(0)) {
-        // Round just became settled (state transition detected)
-        log(`Round ${state.currentRoundId} detected as settled (auto-settled by smart contract)`, 'warn');
+        log(`Round ${state.currentRoundId} settled on blockchain - starting 20-min timer`, 'warn');
         lastSettledRoundId = state.currentRoundId;
         roundSettledAt = Date.now();
         wasRoundSettled = true;
