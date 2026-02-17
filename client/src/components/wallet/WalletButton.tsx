@@ -13,20 +13,7 @@ export function WalletButton({ variant = 'default', className }: WalletButtonPro
   const { disconnect } = useDisconnect();
   const { open } = useWeb3Modal();
 
-  if (isConnecting) {
-    return (
-      <button
-        disabled
-        className={cn(
-          "w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-zinc-900 border border-white/10 text-xs font-bold uppercase tracking-widest text-zinc-300",
-          className
-        )}
-      >
-        <Loader2 className="w-4 h-4 animate-spin" />
-        Connecting...
-      </button>
-    );
-  }
+ 
 
   if (isConnected && address) {
     return (
